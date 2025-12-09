@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type CSSProperties } from 'react';
 import { UIMsg } from '@/lib/chat';
 
 export type Role = UIMsg['role'];
@@ -48,14 +48,16 @@ export default function MessageBubble({ msg }: { msg: Message }) {
   const isSystem = msg.role === 'system';
   const segments = useMemo(() => parseSegments(msg.content), [msg.content]);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
-  const baseStyle = useMemo(
+
+  const baseStyle = useMemo<CSSProperties>(
     () => ({
       overflowWrap: 'anywhere', // allow wrap anywhere inside long tokens
       wordBreak: 'break-word', // prefer breaking at boundaries
     }),
     [],
   );
-  const userStyle = useMemo(
+
+  const userStyle = useMemo<CSSProperties>(
     () => ({
       backgroundImage: 'linear-gradient(125deg, var(--accent-1), var(--accent-2), var(--accent-3))',
       borderColor: 'color-mix(in srgb, var(--accent-2) 38%, transparent)',
@@ -64,7 +66,8 @@ export default function MessageBubble({ msg }: { msg: Message }) {
     }),
     [],
   );
-  const assistantStyle = useMemo(
+
+  const assistantStyle = useMemo<CSSProperties>(
     () => ({
       borderColor: 'color-mix(in srgb, var(--accent-2) 22%, transparent)',
       boxShadow: '0 18px 42px color-mix(in srgb, var(--accent-2) 28%, transparent)',
@@ -140,7 +143,7 @@ export default function MessageBubble({ msg }: { msg: Message }) {
 
           {msg.attachment && (
             <div className="mt-4 rounded-2xl border border-white/20 bg-black/60 p-2">
-              {msg.attachment.type === "image" ? (
+              {msg.attachment.type === 'image' ? (
                 <>
                   <img
                     src={msg.attachment.src}
@@ -168,7 +171,9 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                         </svg>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-white">{msg.attachment.name}</p>
+                        <p className="text-sm font-medium text-white">
+                          {msg.attachment.name}
+                        </p>
                         <p className="text-xs text-white/60">
                           {msg.attachment.mime} · {formatBytes(msg.attachment.size)}
                         </p>

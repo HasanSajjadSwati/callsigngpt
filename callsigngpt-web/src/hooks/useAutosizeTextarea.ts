@@ -9,7 +9,7 @@ type Opts = {
 };
 
 export function useAutosizeTextarea(
-  ref: React.RefObject<HTMLTextAreaElement>,
+  ref: React.RefObject<HTMLTextAreaElement | null>,
   value: string,
   opts: Opts = {},
 ) {

@@ -26,7 +26,7 @@ async function bootstrap() {
   });
 
   // CORS must be registered before routes are used
-  await fastify.register(fastifyCors, {
+  await fastify.register(fastifyCors as any, {
     origin: true, // reflect request origin
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -35,11 +35,10 @@ async function bootstrap() {
     preflight: true,
   });
 
-
   // Global validation
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
-  // (Optional but nice) — handle graceful shutdowns
+  // (Optional but nice) handle graceful shutdowns
   app.enableShutdownHooks();
 
   // (Optional) If you want a global API prefix:
@@ -49,4 +48,5 @@ async function bootstrap() {
   const address = await app.getUrl();
   logger.log(`API up at ${address}`);
 }
+
 bootstrap();

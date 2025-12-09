@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 
@@ -67,12 +67,12 @@ function normalizeErrorMessage(raw: string): string {
   return raw;
 }
 
-export default function Home() {
+function HomeInner() {
   const router = useRouter();
   const { session, accessToken, loading: authLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // ---- Delete confirmation state ----
+  // Delete confirmation state
   const deleteConfirmRef = useRef<{
     reject: ((error: Error) => void) | null;
   }>({ reject: null });
@@ -87,10 +87,22 @@ export default function Home() {
     onConfirm: null,
   });
 
-  // ---- Model selection state ----
+  // Model selection state
   const modelState = useStateWithDefault('');
   const [model, _setModel] = modelState;
   useModelTheme(model);
+
+  const {
+    msgs,
+    setMsgs,
+    conversationId,
+    sidebarReloadKey,
+    setSidebarReloadKey,
+    ensureConversation,
+    appendMessages,
+    saveCurrentChatIfNeeded,
+    resetToNewChat,
+  } = useConversation(modelState);
 
   const setModelAndPersist = async (nextModel: string) => {
     _setModel(nextModel); // update UI immediately
@@ -109,18 +121,6 @@ export default function Home() {
     }
   };
 
-  // ---- Conversation state ----
-  const {
-    msgs,
-    setMsgs,
-    conversationId,
-    sidebarReloadKey,
-    setSidebarReloadKey,
-    ensureConversation,
-    appendMessages,
-    saveCurrentChatIfNeeded,
-    resetToNewChat,
-  } = useConversation(modelState);
   const [statusDialog, setStatusDialog] = useState<{
     open: boolean;
     title: string;
@@ -128,7 +128,7 @@ export default function Home() {
     variant?: 'error' | 'success' | 'info';
   }>({ open: false, title: '', message: '', variant: 'error' });
 
-  // ---- Streaming chat ----
+  // Streaming chat
   const { send, stop, loading } = useStreamingChat({
     accessToken,
     model,
@@ -136,7 +136,7 @@ export default function Home() {
     setMsgs,
     ensureConversation,
     appendMessages,
-    conversationId, // pass current conversationId
+    conversationId,
     onError: (message) =>
       setStatusDialog({
         open: true,
@@ -162,10 +162,9 @@ export default function Home() {
       if (!conversationId) return;
       try {
         const r = await fetch(`/api/conversations/${conversationId}`, { cache: 'no-store' });
-        if (!r.ok) return; // handle 401/404 quietly
+        if (!r.ok) return;
         const { conversation } = await r.json();
         if (!cancelled && conversation?.model) {
-          // IMPORTANT: set UI only (no PATCH back to server here)
           _setModel(conversation.model);
         }
       } catch (e) {
@@ -179,7 +178,7 @@ export default function Home() {
     };
   }, [conversationId, _setModel]);
 
-  // ---- Auto-scroll on new messages ----
+  // Auto-scroll on new messages
   const scrollerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     scrollerRef.current?.scrollTo({
@@ -188,7 +187,7 @@ export default function Home() {
     });
   }, [msgs, loading]);
 
-  // ---- Redirect to /login if not authenticated ----
+  // Redirect to /login if not authenticated
   useEffect(() => {
     if (!authLoading && !session) router.replace('/login');
   }, [authLoading, session, router]);
@@ -197,12 +196,14 @@ export default function Home() {
   if (!session) return null;
 
   const safeMsgs = sanitizeMsgs(msgs);
+
   const handleNewChat = async () => {
     await saveCurrentChatIfNeeded();
     resetToNewChat();
     setSidebarReloadKey((k) => k + 1);
     setSidebarOpen(false);
   };
+
   const handleSelectChat = (id: string) => {
     if (conversationId === id) {
       setSidebarOpen(false);
@@ -212,7 +213,7 @@ export default function Home() {
     setSidebarOpen(false);
   };
 
-  // ---- Layout ----
+  // Layout
   return (
     <main className="relative flex h-screen min-h-screen flex-col overflow-hidden px-4 py-4 text-zinc-100 sm:px-6 sm:py-5 md:px-8 md:py-6 lg:px-10 lg:py-6">
       <div className="pointer-events-none absolute inset-0">
@@ -310,7 +311,7 @@ export default function Home() {
 
                         resolve();
                       } catch (error) {
-                        reject(error as Error);
+                          reject(error as Error);
                       }
                     },
                   });
@@ -323,7 +324,7 @@ export default function Home() {
             />
           </div>
 
-          {/* Right column: TopBar + Chat area */}
+          {/* Right column - TopBar plus Chat area */}
           <section className="flex min-w-0 min-h-0 flex-1 flex-col gap-4 sm:gap-5 xl:h-[calc(100vh-2rem)]">
             <div className="glass-panel gradient-border rounded-[28px] border border-white/10 p-4 sm:p-6 shadow-[0_24px_100px_rgba(2,6,23,.65)]">
               <TopBar model={model} setModel={setModelAndPersist} />
@@ -374,7 +375,6 @@ export default function Home() {
         }}
         onCancel={() => {
           setDeleteConfirm({ isOpen: false, id: null, onConfirm: null });
-          // Reject the promise so optimistic update can be reverted
           if (deleteConfirmRef.current.reject) {
             deleteConfirmRef.current.reject(new Error('Deletion cancelled'));
             deleteConfirmRef.current.reject = null;
@@ -386,8 +386,18 @@ export default function Home() {
         title={statusDialog.title}
         message={statusDialog.message}
         variant={statusDialog.variant ?? 'error'}
-        onClose={() => setStatusDialog({ open: false, title: '', message: '', variant: 'error' })}
+        onClose={() =>
+          setStatusDialog({ open: false, title: '', message: '', variant: 'error' })
+        }
       />
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+      <HomeInner />
+    </Suspense>
   );
 }
