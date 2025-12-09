@@ -102,6 +102,7 @@ function HomeInner() {
     appendMessages,
     saveCurrentChatIfNeeded,
     resetToNewChat,
+    loadingConversation,
   } = useConversation(modelState);
 
   const setModelAndPersist = async (nextModel: string) => {
@@ -113,8 +114,6 @@ function HomeInner() {
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ model: nextModel }),
         });
-        // optional: refresh sidebar ordering
-        setSidebarReloadKey((k) => k + 1);
       } catch (e) {
         console.error('Failed to persist model:', e);
       }
@@ -200,7 +199,6 @@ function HomeInner() {
   const handleNewChat = async () => {
     await saveCurrentChatIfNeeded();
     resetToNewChat();
-    setSidebarReloadKey((k) => k + 1);
     setSidebarOpen(false);
   };
 
@@ -319,7 +317,6 @@ function HomeInner() {
               }}
               onClearAll={() => {
                 resetToNewChat();
-                setSidebarReloadKey((k) => k + 1);
               }}
             />
           </div>
@@ -331,7 +328,13 @@ function HomeInner() {
             </div>
 
             <div className="glass-panel gradient-border flex flex-1 min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/10 p-3 sm:p-4 lg:p-5 shadow-[0_28px_110px_rgba(2,6,23,.7)]">
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-white/5 bg-white/5">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-white/5 bg-white/5 relative">
+                {loadingConversation && (
+                  <div className="absolute right-4 top-3 z-20 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-200 shadow-sm">
+                    <span className="h-2 w-2 rounded-full bg-emerald-300 animate-pulse" />
+                    Syncing...
+                  </div>
+                )}
                 <div
                   ref={scrollerRef}
                   className="scroll-area flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-5 sm:px-5 lg:px-8"

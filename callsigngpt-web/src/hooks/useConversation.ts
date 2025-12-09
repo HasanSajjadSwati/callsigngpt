@@ -7,8 +7,18 @@ import { UI_TEXT, APP_CONFIG, getSystemGreeting } from '@/config/uiText';
 import { UIMsg } from '@/lib/chat';
 import { getApiBase } from '@/lib/apiBase';
 import { HttpClient } from '@/lib/httpClient';
+import { modelCache } from '@/lib/modelCache';
 
 type Role = UIMsg['role'];
+
+function buildSystemMessage(modelKey: string, labels: Record<string, string>): UIMsg {
+  const label = (modelKey && labels[modelKey]) || modelKey || 'CallSignGPT';
+  return {
+    id: genId(),
+    role: (APP_CONFIG.conversation.greetingRole ?? 'assistant') as Role,
+    content: getSystemGreeting(label),
+  };
+}
 
 export function useConversation(modelState: [string, (v: string) => void]) {
   const [model] = modelState;
@@ -18,35 +28,22 @@ export function useConversation(modelState: [string, (v: string) => void]) {
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
   const modelRef = useRef(model);
   const modelLabelsRef = useRef<Record<string, string>>({});
+  const greetingFnRef = useRef<() => UIMsg>(() => buildSystemMessage(modelRef.current, modelLabelsRef.current));
 
   useEffect(() => {
     modelRef.current = model;
+    greetingFnRef.current = () => buildSystemMessage(modelRef.current, modelLabelsRef.current);
   }, [model]);
 
   useEffect(() => {
     modelLabelsRef.current = modelLabels;
+    greetingFnRef.current = () => buildSystemMessage(modelRef.current, modelLabelsRef.current);
   }, [modelLabels]);
 
-  const greetingForModel = useCallback(
-    (modelKey?: string) => {
-      const key = modelKey ?? modelRef.current;
-      const label = (key && modelLabelsRef.current[key]) || key;
-      return getSystemGreeting(label);
-    },
-    [],
-  );
-
-  const buildSystemMessage = useCallback(
-    (): UIMsg => ({
-      id: genId(),
-      role: (APP_CONFIG.conversation.greetingRole ?? 'assistant') as Role,
-      content: greetingForModel(modelRef.current),
-    }),
-    [greetingForModel],
-  );
-
-  const [msgs, setMsgs] = useState<UIMsg[]>(() => [buildSystemMessage()]);
+  const [msgs, setMsgs] = useState<UIMsg[]>(() => [greetingFnRef.current()]);
   const msgsRef = useRef<UIMsg[]>(msgs); // Keep ref to latest messages
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [loadingConversation, setLoadingConversation] = useState(false);
 
   // Keep ref in sync with msgs state
   useEffect(() => {
@@ -64,18 +61,15 @@ export function useConversation(modelState: [string, (v: string) => void]) {
     createdOnServer.current = false;
     setConversationId(null);
     pendingConversationId.current = null;
-    setMsgs([buildSystemMessage()]);
-  }, [buildSystemMessage]);
+    setMsgs([greetingFnRef.current()]);
+  }, []);
 
   // Fetch model labels so the greeting can use display names
   useEffect(() => {
     let cancelled = false;
-    const apiBase = getApiBase();
-    const client = new HttpClient({ baseUrl: apiBase });
     (async () => {
-      if (!apiBase) return;
       try {
-        const data = await client.get<{ modelKey: string; displayName?: string | null }[]>('/models');
+        const data = await modelCache.list();
         if (cancelled) return;
         const map: Record<string, string> = {};
         for (const m of data || []) {
@@ -91,9 +85,16 @@ export function useConversation(modelState: [string, (v: string) => void]) {
     };
   }, []);
 
-  // Keep the greeting in sync with the selected model/display name
+  // cleanup timer on unmount
   useEffect(() => {
-    const nextGreeting = greetingForModel(model);
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, []);
+
+  // Keep the greeting in sync with the selected model/display name without retriggering conversation load
+  useEffect(() => {
+    const nextGreeting = greetingFnRef.current().content;
     setMsgs((prev) => {
       if (!prev.length) return prev;
       const [first, ...rest] = prev;
@@ -101,7 +102,7 @@ export function useConversation(modelState: [string, (v: string) => void]) {
       if (first.content === nextGreeting) return prev;
       return [{ ...first, content: nextGreeting }, ...rest];
     });
-  }, [model, modelLabels, greetingForModel]);
+  }, [model, modelLabels]);
 
   // Load conversation when ?c changes
   useEffect(() => {
@@ -114,11 +115,13 @@ export function useConversation(modelState: [string, (v: string) => void]) {
       if (conversationId && !isCreatingConversation.current && !pendingConversationId.current) {
         resetLocal();
       }
+      setLoadingConversation(false);
       return;
     }
 
     // If we are already on this conversation, do not reload
     if (conversationId === id) {
+      setLoadingConversation(false);
       return;
     }
 
@@ -126,12 +129,14 @@ export function useConversation(modelState: [string, (v: string) => void]) {
     // (this prevents race conditions when ensureConversation updates the URL)
     // Also check if this is the pending conversation we are creating
     if (isCreatingConversation.current || pendingConversationId.current === id) {
+      setLoadingConversation(false);
       return;
     }
 
     let cancelled = false;
 
     (async () => {
+      setLoadingConversation(true);
       try {
         const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations/${id}`, {
           method: 'GET',
@@ -156,13 +161,19 @@ export function useConversation(modelState: [string, (v: string) => void]) {
           createdOnServer.current = true;
           setConversationId(convo.id);
           const loaded: UIMsg[] = Array.isArray(convo.messages) ? convo.messages : [];
-          
+
           setMsgs((prev) => {
+            const hasLocalContent = prev.some((m) => m.role === 'user' || m.role === 'assistant');
             // If we are switching to a different conversation, always load server data
             if (conversationId && conversationId !== id) {
               return loaded.length
                 ? loaded
-                : [buildSystemMessage()];
+                : [greetingFnRef.current()];
+            }
+
+            // If staying on same conversation and we already have meaningful local state, keep it to avoid flicker
+            if (hasLocalContent && conversationId === convo.id) {
+              return prev;
             }
             
             // If we are loading the conversation that was just created (pendingConversationId matches)
@@ -182,7 +193,7 @@ export function useConversation(modelState: [string, (v: string) => void]) {
             // Otherwise, use the loaded messages
             return loaded.length
               ? loaded
-              : [buildSystemMessage()];
+              : [greetingFnRef.current()];
           });
         } else {
           console.warn(`[useConversation] Conversation ${id} has no data`);
@@ -193,12 +204,15 @@ export function useConversation(modelState: [string, (v: string) => void]) {
         console.error(`[useConversation] Error loading conversation ${id}:`, error);
         resetLocal();
       }
+    finally {
+        if (!cancelled) setLoadingConversation(false);
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [search, conversationId, resetLocal, buildSystemMessage]);
+  }, [search, conversationId, resetLocal]);
 
   /** Create conversation on server if missing */
   const ensureConversation = useCallback(async () => {
@@ -285,28 +299,24 @@ export function useConversation(modelState: [string, (v: string) => void]) {
             updateBody.title = newTitle;
           }
           
-          fetch(`${APP_CONFIG.api.baseUrl}/conversations/${cid}`, {
-            method: 'PATCH',
-            credentials: APP_CONFIG.api.credentials,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updateBody),
-          })
-            .then((res) => {
-              if (!res.ok) {
-                console.error('[appendMessages] Failed to save messages:', res.status, res.statusText);
-              } else {
-                console.log(
-                  '[appendMessages] Successfully saved',
-                  finalNext.length,
-                  'messages',
-                  newTitle ? `with title: ${newTitle}` : '',
-                );
-                setSidebarReloadKey((k) => k + 1);
-              }
+          // debounce saves to reduce flicker
+          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = setTimeout(() => {
+            fetch(`${APP_CONFIG.api.baseUrl}/conversations/${cid}`, {
+              method: 'PATCH',
+              credentials: APP_CONFIG.api.credentials,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updateBody),
             })
-            .catch((err) => {
-              console.error('[appendMessages] Error saving messages:', err);
-            });
+              .then((res) => {
+                if (!res.ok) {
+                  console.error('[appendMessages] Failed to save messages:', res.status, res.statusText);
+                }
+              })
+              .catch((err) => {
+                console.error('[appendMessages] Error saving messages:', err);
+              });
+          }, 300);
         }
         return finalNext;
       });
@@ -335,14 +345,6 @@ export function useConversation(modelState: [string, (v: string) => void]) {
               });
               if (!res.ok) {
                 console.error('[appendMessages] Retry failed to save messages:', res.status);
-              } else {
-                console.log(
-                  '[appendMessages] Retry successfully saved',
-                  currentMsgs.length,
-                  'messages',
-                  newTitle ? `with title: ${newTitle}` : '',
-                );
-                setSidebarReloadKey((k) => k + 1);
               }
             } catch (err) {
               console.error('[appendMessages] Retry error saving messages:', err);
@@ -390,6 +392,7 @@ export function useConversation(modelState: [string, (v: string) => void]) {
     appendMessages,
     saveCurrentChatIfNeeded,
     resetToNewChat,
+    loadingConversation,
   };
 }
 

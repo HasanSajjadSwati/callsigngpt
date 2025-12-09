@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { streamChat, type ChatMessage, type ChatContentPart } from '@/lib/streamChat';
 import { UIMsg, Attachment } from '@/lib/chat';
 import { getApiBase } from '@/lib/apiBase';
+import { modelCache } from '@/lib/modelCache';
 
 type UseStreamingChatArgs = {
   accessToken?: string;
@@ -126,13 +127,9 @@ export function useStreamingChat({
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
-    const apiBase = getApiBase();
     (async () => {
-      if (!apiBase) return;
       try {
-        const resp = await fetch(`${apiBase}/models`);
-        if (!resp.ok) throw new Error(`models fetch failed ${resp.status}`);
-        const data = await resp.json();
+        const data = await modelCache.list();
         if (cancelled) return;
         const map: Record<string, string> = {};
         for (const m of data || []) {
