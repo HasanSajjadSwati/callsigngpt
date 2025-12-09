@@ -6,6 +6,8 @@ import { useAuth } from '@/lib/auth';
 import { isValidPhoneLength, normalizePhoneInput } from '@/lib/phone';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import StatusDialog from '@/components/StatusDialog';
+import { getApiBase } from '@/lib/apiBase';
+import { HttpClient } from '@/lib/httpClient';
 
 type MeResponse = {
   id: string;
@@ -65,24 +67,20 @@ export default function AccountPage() {
   // --- Fetcher --------------------------------------------------------------
   async function loadMe() {
     if (!accessToken) return;
+    const client = new HttpClient({
+      baseUrl: getApiBase(),
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
     setLoadingProfile(true);
     setError(null);
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      const data = await client.get<MeResponse>('/auth/me');
 
-      if (res.status === 401) {
+      if (!data?.email) {
         // token invalid/expired
         router.replace('/login');
         return;
       }
-
-      if (!res.ok) {
-        throw new Error(`Failed to load profile (${res.status})`);
-      }
-
-      const data: MeResponse = await res.json();
 
       setEmail(data.email ?? session?.user?.email ?? '');
       setName((data.name ?? (session?.user?.user_metadata?.name as string) ?? '') as string);
@@ -119,21 +117,17 @@ export default function AccountPage() {
   // --- Actions --------------------------------------------------------------
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
+    const client = new HttpClient({
+      baseUrl: getApiBase(),
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
     if (!isValidPhoneLength(phone)) {
       setPhoneError(PHONE_LENGTH_ERROR);
       showStatusDialog('Invalid phone number', PHONE_LENGTH_ERROR, 'error');
       return;
     }
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/update-profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ name, phone }),
-      });
-      if (!res.ok) throw new Error('Failed to update profile');
+      await client.post('/auth/update-profile', { name, phone });
       showStatusDialog('Profile updated', 'Your profile details have been saved.', 'success');
       loadMe();
     } catch (err: any) {
@@ -143,16 +137,12 @@ export default function AccountPage() {
 
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
+    const client = new HttpClient({
+      baseUrl: getApiBase(),
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/change-password`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ oldPassword, newPassword }),
-      });
-      if (!res.ok) throw new Error('Failed to change password');
+      await client.post('/auth/change-password', { oldPassword, newPassword });
       showStatusDialog('Password changed', 'Your password was updated successfully.', 'success');
       setOldPassword('');
       setNewPassword('');
@@ -199,6 +189,10 @@ export default function AccountPage() {
 
   async function handleDeleteAccount() {
     if (!accessToken || deletingAccount) return;
+    const client = new HttpClient({
+      baseUrl: getApiBase(),
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
     setDeletingAccount(true);
     setStatusMessage(null);
     try {
@@ -209,15 +203,7 @@ export default function AccountPage() {
         console.warn('[account] failed to clear history before deletion:', err);
       }
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/account`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      });
-      if (!res.ok) {
-        throw new Error('Failed to delete account');
-      }
+      await client.delete('/auth/account');
       try {
         await signOut();
       } catch (err) {

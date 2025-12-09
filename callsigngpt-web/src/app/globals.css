@@ -169,3 +169,12 @@ select option {
   border-color: color-mix(in srgb, var(--accent-2) 35%, transparent);
   box-shadow: 0 14px 36px color-mix(in srgb, var(--accent-2) 35%, transparent);
 }
+
+.history-delete-button img {
+  filter: invert(1);
+  transition: opacity 160ms ease;
+}
+
+.history-delete-button:hover img {
+  filter: invert(15%) sepia(96%) saturate(6400%) hue-rotate(-5deg) brightness(88%) contrast(110%);
+}

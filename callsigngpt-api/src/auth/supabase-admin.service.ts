@@ -1,6 +1,8 @@
 // src/auth/supabase-admin.service.ts
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { AppConfigService } from '../config/app-config.service';
+import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
 
 @Injectable()
 export class SupabaseAdminService {
@@ -9,10 +11,10 @@ export class SupabaseAdminService {
   private readonly serviceKey: string;
   private readonly anonKey: string;
 
-  constructor() {
-    this.url = process.env.SUPABASE_URL || '';
-    this.serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-    this.anonKey = process.env.SUPABASE_ANON_KEY || this.serviceKey;
+  constructor(private readonly config: AppConfigService) {
+    this.url = this.config.supabaseUrl;
+    this.serviceKey = this.config.supabaseServiceRoleKey;
+    this.anonKey = this.config.supabaseAnonKey;
 
     if (!this.url || !this.serviceKey) {
       throw new InternalServerErrorException('Supabase env vars are missing');
@@ -26,19 +28,33 @@ export class SupabaseAdminService {
    * Uses anon key if provided; falls back to service key.
    */
   async verifyPassword(email: string, password: string): Promise<boolean> {
-    const res = await fetch(`${this.url}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: this.anonKey,
-      },
-      body: JSON.stringify({ email, password }),
-    });
+    try {
+      const res = await fetchWithTimeout(
+        `${this.url}/auth/v1/token?grant_type=password`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            apikey: this.anonKey,
+          },
+          body: JSON.stringify({ email, password }),
+        },
+        this.config.requestTimeoutMs,
+      );
 
-    if (res.ok) return true;
+      if (res.ok) return true;
+      if (res.status === 400 || res.status === 401) return false; // invalid_grant
 
-    // 400 invalid_grant on bad password
-    return false;
+      const txt = await res.text().catch(() => '');
+      throw new InternalServerErrorException(
+        `Supabase password verification failed (${res.status}): ${txt || res.statusText}`,
+      );
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new InternalServerErrorException('Supabase password verification timed out');
+      }
+      throw error;
+    }
   }
 
   async setPassword(userId: string, newPassword: string): Promise<void> {
@@ -64,13 +80,17 @@ export class SupabaseAdminService {
   }
 
   async revokeUserSessions(userId: string): Promise<void> {
-    const res = await fetch(`${this.url}/auth/v1/admin/users/${userId}/sessions`, {
-      method: 'DELETE',
-      headers: {
-        apikey: this.serviceKey,
-        Authorization: `Bearer ${this.serviceKey}`,
+    const res = await fetchWithTimeout(
+      `${this.url}/auth/v1/admin/users/${userId}/sessions`,
+      {
+        method: 'DELETE',
+        headers: {
+          apikey: this.serviceKey,
+          Authorization: `Bearer ${this.serviceKey}`,
+        },
       },
-    });
+      this.config.requestTimeoutMs,
+    );
 
     if (!res.ok) {
       let errMsg = 'Failed to revoke user sessions';

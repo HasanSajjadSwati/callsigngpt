@@ -9,12 +9,8 @@
     "lint": "eslint"
   },
   "dependencies": {
-    "@fastify/cors": "^11.1.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.58.0",
-    "@tanstack/react-query": "^5.90.2",
-    "axios": "^1.12.2",
-    "clsx": "^2.1.1",
     "next": "15.5.4",
     "nodemailer": "^6.10.1",
     "react": "19.1.0",

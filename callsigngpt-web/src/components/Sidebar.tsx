@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { getApiBase } from '@/lib/apiBase';
+import { HttpClient } from '@/lib/httpClient';
 import ReportProblemDialog from './ReportProblemDialog';
 
 type Item = { id: string; title: string };
@@ -75,9 +77,13 @@ function HistoryItem({
           active ? 'bg-white/20 text-white' : 'bg-white/5 text-zinc-400 group-hover:text-white',
         ].join(' ')}
       >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
-          <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8z" />
-        </svg>
+        <img
+          src="/icons8-chat-96.svg"
+          alt=""
+          aria-hidden="true"
+          className="h-4 w-4"
+          style={{ filter: 'invert(1)' }}
+        />
       </div>
 
       {isEditing ? (
@@ -124,12 +130,15 @@ function HistoryItem({
               e.preventDefault();
               onDelete();
             }}
-            className="rounded-xl p-1.5 hover:bg-white/10 text-zinc-300 hover:text-red-200"
+            className="history-delete-button rounded-xl p-1.5 hover:bg-white/10 text-zinc-300 hover:text-red-200"
             title="Delete"
           >
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M3 6h18M8 6v14m8-14v14M5 6l1-3h12l1 3" />
-            </svg>
+            <img
+              src="/icons8-remove-96.svg"
+              alt=""
+              aria-hidden="true"
+              className="h-4 w-4"
+            />
           </button>
         </div>
       )}
@@ -171,6 +180,14 @@ export default function Sidebar({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const apiBase = getApiBase();
+  const authedClient = useMemo(
+    () =>
+      accessToken
+        ? new HttpClient({ baseUrl: apiBase, headers: { Authorization: `Bearer ${accessToken}` } })
+        : null,
+    [accessToken, apiBase],
+  );
 
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
@@ -190,11 +207,8 @@ export default function Sidebar({
 
     (async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/me`, {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!res.ok) return;
-        const data = await res.json();
+        if (!authedClient) return;
+        const data = await authedClient.get<{ tier?: string; plan?: string }>('/auth/me');
         if (!cancelled) {
           setPlan((data?.tier ?? data?.plan ?? 'free') as string);
         }
@@ -206,7 +220,7 @@ export default function Sidebar({
     return () => {
       cancelled = true;
     };
-  }, [accessToken]);
+  }, [accessToken, authedClient]);
 
   useEffect(() => {
     let cancelled = false;

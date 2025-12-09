@@ -5,13 +5,24 @@ import { NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 
 const MAX_FILES = 5;
-const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB each
-const MAX_TOTAL_SIZE = 15 * 1024 * 1024; // 15MB total
+const MAX_FILE_SIZE =
+  Number(process.env.MAX_REPORT_ATTACHMENT_MB || process.env.NEXT_PUBLIC_MAX_ATTACHMENT_MB || 5) *
+  1024 *
+  1024; // default 5MB each
+const MAX_TOTAL_SIZE = 3 * MAX_FILE_SIZE; // total cap derived from per-file limit
 
 function sanitize(value: FormDataEntryValue | null, fallback = ''): string {
   if (typeof value !== 'string') return fallback;
   return value.trim().slice(0, 2000);
 }
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 
 export async function POST(req: Request) {
   try {
@@ -84,10 +95,12 @@ export async function POST(req: Request) {
     });
 
     const reporterLine = [name || null, email || null].filter(Boolean).join(' • ') || 'Unknown user';
+    const safeReporter = escapeHtml(reporterLine);
+    const safeDescription = escapeHtml(description);
     const textBody = `Reporter: ${reporterLine}\n\n${description}`;
     const htmlBody = `
-      <p><strong>Reporter:</strong> ${reporterLine}</p>
-      <p>${description.replace(/\n/g, '<br />')}</p>
+      <p><strong>Reporter:</strong> ${safeReporter}</p>
+      <p>${safeDescription.replace(/\n/g, '<br />')}</p>
     `;
 
     await transporter.sendMail({

@@ -6,18 +6,15 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
+import { AppConfigService } from '../config/app-config.service';
+import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
 
 @Injectable()
 export class SupabaseJwtGuard implements CanActivate {
-  private url = process.env.SUPABASE_URL!;
-  private apiKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-
-  constructor(private readonly reflector: Reflector) {
-    if (!this.url || !this.apiKey) {
-      // Do not crash the app; throw at runtime when the guard is used
-      // so health and other Public routes still work if misconfigured.
-    }
-  }
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly config: AppConfigService,
+  ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // 1) Allow @Public()
@@ -29,7 +26,10 @@ export class SupabaseJwtGuard implements CanActivate {
 
     const req = context.switchToHttp().getRequest();
 
-    if (!this.url || !this.apiKey) {
+    const url = this.config.supabaseUrl;
+    const apiKey = this.config.supabaseAnonKey;
+
+    if (!url || !apiKey) {
       throw new UnauthorizedException('Auth not configured');
     }
 
@@ -38,12 +38,22 @@ export class SupabaseJwtGuard implements CanActivate {
     if (!token) throw new UnauthorizedException('Missing bearer token');
 
     // Verify token with Supabase Auth REST
-    const res = await fetch(`${this.url}/auth/v1/user`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        apikey: this.apiKey,
-      },
-    });
+    let res: Response;
+    try {
+      res = await fetchWithTimeout(
+        `${url}/auth/v1/user`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            apikey: apiKey,
+          },
+        },
+        this.config.requestTimeoutMs,
+      );
+    } catch (error: any) {
+      const reason = error?.name === 'AbortError' ? 'timed out' : 'failed';
+      throw new UnauthorizedException(`Token validation ${reason}`);
+    }
 
     if (!res.ok) {
       throw new UnauthorizedException('Invalid token');

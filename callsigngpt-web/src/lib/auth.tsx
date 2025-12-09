@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
+import { getApiBase } from './apiBase';
+import { HttpClient } from './httpClient';
 
 type SessionLike = {
   access_token?: string;
@@ -55,17 +57,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   ) {
     // Best-effort: create/update your app user row
     if (!token) return;
+    const client = new HttpClient({
+      baseUrl: getApiBase(),
+      headers: { Authorization: `Bearer ${token}` },
+    });
     try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/sync`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(profile ?? {}),
-      });
+      await client.post('/auth/sync', profile ?? {});
     } catch {
-      // ignore — your API guard can lazily create on first protected call
+      // ignore - your API guard can lazily create on first protected call
     }
   }
 

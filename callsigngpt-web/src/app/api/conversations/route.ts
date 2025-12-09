@@ -1,10 +1,13 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { APP_CONFIG, UI_TEXT } from '@/config/uiText';
 import { supabaseServer } from '@/lib/supabaseServer';
 
 type AnyMessage = { role?: string; content?: string | null };
 const MAX_TITLE_LENGTH = APP_CONFIG.conversation.maxTitleLength ?? 80;
 const PLACEHOLDER_TITLE = UI_TEXT.app.newChatTitle.toLowerCase();
+const MAX_MESSAGES = 200;
+const MAX_MESSAGE_LENGTH = 4000;
 
 function deriveTitle(
   messages: AnyMessage[] | undefined,
@@ -61,8 +64,34 @@ export async function POST(req: Request) {
   const { data: { user } = { user: null } } = await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  const { title, model, messages = [] } = await req.json();
-  const normalizedMessages: AnyMessage[] = Array.isArray(messages) ? messages : [];
+  const bodySchema = z.object({
+    title: z.string().optional(),
+    model: z.string().trim().max(200).optional(),
+    messages: z
+      .array(
+        z.object({
+          role: z.string().trim().max(20).optional(),
+          content: z
+            .union([z.string().max(MAX_MESSAGE_LENGTH), z.null()])
+            .optional(),
+        }),
+      )
+      .max(MAX_MESSAGES)
+      .optional(),
+  });
+
+  const parsed = bodySchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
+  }
+
+  const { title, model, messages = [] } = parsed.data;
+  const normalizedMessages: AnyMessage[] = Array.isArray(messages)
+    ? messages.map((m) => ({
+        role: (m.role ?? '').toString().slice(0, 20),
+        content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_LENGTH) : null,
+      }))
+    : [];
   const finalTitle = pickTitle(
     typeof title === 'string' ? title : undefined,
     normalizedMessages,

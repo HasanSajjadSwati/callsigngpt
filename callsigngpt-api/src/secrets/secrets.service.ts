@@ -1,5 +1,6 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { AppConfigService } from '../config/app-config.service';
 
 type SecretCache = Record<string, { value?: string; expiresAt: number }>;
 
@@ -10,9 +11,9 @@ export class SecretsService {
   private readonly cache: SecretCache = {};
   private readonly cacheMs = 5 * 60 * 1000; // 5 minutes
 
-  constructor() {
-    const url = process.env.SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  constructor(private readonly config: AppConfigService) {
+    const url = this.config.supabaseUrl;
+    const serviceKey = this.config.supabaseServiceRoleKey;
 
     if (url && serviceKey) {
       this.supabase = createClient(url, serviceKey);

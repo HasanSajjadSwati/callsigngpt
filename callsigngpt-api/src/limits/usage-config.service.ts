@@ -1,6 +1,7 @@
 import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { ModelConfig, ModelConfigService } from '../llm/model-config.service';
+import { AppConfigService } from '../config/app-config.service';
 
 export type ModelRuleConfig = Pick<ModelConfig, 'modelKey' | 'isPremium' | 'perModelCap' | 'fallbackModel'>;
 
@@ -21,9 +22,12 @@ export class UsageConfigService {
   private cache?: { value: UsageConfig; expiresAt: number };
   private readonly cacheMs = 60_000; // light in-memory cache to avoid repeated hits
 
-  constructor(private readonly modelConfig: ModelConfigService) {
-    const url = process.env.SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  constructor(
+    private readonly modelConfig: ModelConfigService,
+    private readonly config: AppConfigService,
+  ) {
+    const url = this.config.supabaseUrl;
+    const serviceKey = this.config.supabaseServiceRoleKey;
     if (!url || !serviceKey) {
       throw new Error('Supabase credentials missing for usage caps');
     }

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { streamChat, type ChatMessage, type ChatContentPart } from '@/lib/streamChat';
 import { UIMsg, Attachment } from '@/lib/chat';
+import { getApiBase } from '@/lib/apiBase';
 
 type UseStreamingChatArgs = {
   accessToken?: string;
@@ -125,10 +126,7 @@ export function useStreamingChat({
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
-    const apiBase =
-      (process.env.NEXT_PUBLIC_API_URL ||
-        (typeof window !== 'undefined' ? window.location.origin.replace(/:3000$/, ':3001') : '')
-      ).replace(/\/$/, '');
+    const apiBase = getApiBase();
     (async () => {
       if (!apiBase) return;
       try {
@@ -218,10 +216,7 @@ export function useStreamingChat({
       setLoading(true);
 
       try {
-        const apiUrl = (
-          process.env.NEXT_PUBLIC_API_URL ||
-          (typeof window !== 'undefined' ? window.location.origin.replace(/:3000$/, ':3001') : '')
-        ).replace(/\/$/, '');
+        const apiUrl = getApiBase();
         if (!apiUrl) throw new Error('API base URL not configured');
         const endpointPath = '/chat';
 
@@ -238,7 +233,10 @@ export function useStreamingChat({
           return history;
         })();
 
-        const fullHistory: ChatMessage[] = [...baseHistory, userMsg]
+        const MAX_HISTORY = 60;
+        const historyWindow = baseHistory.length > MAX_HISTORY ? baseHistory.slice(-MAX_HISTORY) : baseHistory;
+
+        const fullHistory: ChatMessage[] = [...historyWindow, userMsg]
           .map((msg) => {
             const content = buildMessageContent(msg);
             if (Array.isArray(content) && !content.length) return null;
@@ -253,8 +251,6 @@ export function useStreamingChat({
           messages: fullHistory,
           temperature: 0.7,
         };
-
-        console.log('[send] model=', payload.model, 'cid=', payload.conversationId);
 
         let finalAssistantText = '';
         let fallbackNotified = false;

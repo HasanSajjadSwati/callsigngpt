@@ -6,6 +6,8 @@ import { useAutosizeTextarea } from "@/hooks/useAutosizeTextarea";
 import { UI_TEXT } from "@/config/uiText";
 import { Attachment } from "@/lib/chat";
 
+const MAX_ATTACHMENT_BYTES = Number(process.env.NEXT_PUBLIC_MAX_ATTACHMENT_MB || 5) * 1024 * 1024; // client-side guard
+
 type SendPayload = {
   text?: string;
   attachment?: Attachment;
@@ -35,6 +37,7 @@ const readFileAsDataUrl = (file: File | Blob) =>
 export default function Composer({ disabled, onSend, onStop, showStop }: Props) {
   const [input, setInput] = useState("");
   const [attachment, setAttachment] = useState<Attachment | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   useAutosizeTextarea(inputRef, input);
@@ -47,6 +50,11 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
   const handleFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setError(`Attachments are limited to ${formatSize(MAX_ATTACHMENT_BYTES)}.`);
+      event.target.value = "";
+      return;
+    }
     try {
       const src = await readFileAsDataUrl(file);
       const isImage = file.type.startsWith("image/");
@@ -71,6 +79,10 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
     event.preventDefault();
     const file = imageItem.getAsFile();
     if (!file) return;
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      setError(`Attachments are limited to ${formatSize(MAX_ATTACHMENT_BYTES)}.`);
+      return;
+    }
     try {
       const src = await readFileAsDataUrl(file);
       setAttachment({
@@ -90,6 +102,7 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
     const trimmed = input.trim();
     if (!trimmed && !attachment) return;
 
+    setError(null);
     const payload: SendPayload = { text: trimmed || undefined, attachment: attachment ?? undefined };
 
     // Clear immediately so the just-sent text doesn't linger while the reply streams
@@ -109,6 +122,11 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
           }}
           className="flex flex-col gap-3 rounded-[28px] border border-white/10 bg-black/60 px-4 py-4 shadow-[0_25px_80px_rgba(2,6,23,.65)] backdrop-blur-xl transition-all duration-200 focus-within:border-white/30 focus-within:shadow-[0_30px_90px_rgba(2,6,23,.8)]"
         >
+          {error && (
+            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+              {error}
+            </div>
+          )}
           {attachment && (
             <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/5 px-3 py-2">
               <div className="flex flex-1 items-center gap-3">
@@ -178,16 +196,18 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled}
                 className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 text-white transition-all duration-200 hover:border-white/40 hover:bg-white/10 hover:-translate-y-0.5"
-                aria-label="Attach file"
-                title="Attach file"
+                aria-label="Attach file (images/files supported on select models)"
+                title="Attach file (images/files supported on select models)"
               >
               <span aria-hidden="true" className="flex h-6 w-6 items-center justify-center">
-                <svg viewBox="0 0 24 24" className="h-5 w-5" stroke="currentColor" strokeWidth="1.5" fill="none">
-                  <path d="M8 2a5 5 0 0 0-5 5v8a5 5 0 0 0 5 5h8a5 5 0 0 0 5-5v-6a3 3 0 0 0-3-3h-5a2 2 0 0 0-2 2v5" strokeLinecap="round" strokeLinejoin="round"/>
-                  <path d="M7 7l5 5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
+                <img
+                  src="/icons8-attach-96.svg"
+                  alt=""
+                  aria-hidden="true"
+                  className="h-5 w-5"
+                />
               </span>
-                <span className="sr-only">Attach file</span>
+                <span className="sr-only">Attach file (images/files supported on select models)</span>
               </button>
 
               {showStop && (
@@ -211,9 +231,12 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
                 title={UI_TEXT.composer.sendTitle}
                 disabled={disabled}
               >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor">
-                  <path d="M2.99 12.69c-.61-.26-.62-1.12-.01-1.39l16.5-7.22c.68-.3 1.38.4 1.08 1.08l-7.22 16.5c-.27.61-1.13.6-1.39-.01l-2.25-5.29a1 1 0 0 0-.51-.51l-5.29-2.25zM9.7 13.3l2.23 5.25 6.03-13.77-13.77 6.03 5.25 2.23c.64.27 1.15.78 1.51 1.26.36-.48.87-.99 1.25-1.26z" />
-                </svg>
+                <img
+                  src="/icons8-send-50.svg"
+                  alt=""
+                  aria-hidden="true"
+                  className="h-5 w-5"
+                />
               </button>
             </div>
           </div>

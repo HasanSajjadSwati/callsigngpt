@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { AppConfigService } from '../config/app-config.service';
 
 type UsageResult = { totalCalls: number; dailyCap: number };
 
@@ -8,9 +9,9 @@ export class UsageLoggerService {
   private readonly logger = new Logger(UsageLoggerService.name);
   private readonly supabase: SupabaseClient;
 
-  constructor() {
-    const url = process.env.SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+  constructor(private readonly config: AppConfigService) {
+    const url = this.config.supabaseUrl;
+    const serviceKey = this.config.supabaseServiceRoleKey;
     if (!url || !serviceKey) {
       throw new Error('Supabase credentials missing for usage logger');
     }

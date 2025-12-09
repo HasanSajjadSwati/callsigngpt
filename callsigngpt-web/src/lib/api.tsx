@@ -1,22 +1,31 @@
-export async function api<T = any>(
-  url: string,
-  opts: RequestInit & { token?: string } = {},
-): Promise<T> {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL!;
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(opts.headers as any),
-  };
-  if (opts.token) headers['Authorization'] = `Bearer ${opts.token}`;
+import { HttpClient } from './httpClient';
+import { getApiBase } from './apiBase';
 
-  const res = await fetch(`${apiUrl}${url}`, {
-    ...opts,
-    headers,
+type ApiOpts = RequestInit & { token?: string };
+
+/**
+ * Thin wrapper over HttpClient that respects the provided HTTP method.
+ * Defaults to GET when no method/body is supplied.
+ */
+export async function api<T = any>(url: string, opts: ApiOpts = {}): Promise<T> {
+  const client = new HttpClient({
+    baseUrl: getApiBase(),
+    headers: opts.token ? { Authorization: `Bearer ${opts.token}` } : undefined,
   });
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`HTTP ${res.status}: ${text || res.statusText}`);
-  }
-  return res.json() as Promise<T>;
+  const method = (opts.method || (opts.body ? 'POST' : 'GET')).toUpperCase();
+  const parsedBody =
+    typeof opts.body === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(opts.body);
+          } catch {
+            return opts.body;
+          }
+        })()
+      : (opts.body as any);
+
+  if (method === 'GET') return client.get<T>(url, opts);
+  if (method === 'DELETE') return client.delete<T>(url, parsedBody, opts);
+  return client.post<T>(url, parsedBody, opts);
 }

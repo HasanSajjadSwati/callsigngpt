@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { UI_TEXT, APP_CONFIG, getSystemGreeting } from '@/config/uiText';
 import { UIMsg } from '@/lib/chat';
+import { getApiBase } from '@/lib/apiBase';
+import { HttpClient } from '@/lib/httpClient';
 
 type Role = UIMsg['role'];
 
@@ -68,16 +70,12 @@ export function useConversation(modelState: [string, (v: string) => void]) {
   // Fetch model labels so the greeting can use display names
   useEffect(() => {
     let cancelled = false;
-    const apiBase =
-      (process.env.NEXT_PUBLIC_API_URL ||
-        (typeof window !== 'undefined' ? window.location.origin.replace(/:3000$/, ':3001') : '')
-      ).replace(/\/$/, '');
+    const apiBase = getApiBase();
+    const client = new HttpClient({ baseUrl: apiBase });
     (async () => {
       if (!apiBase) return;
       try {
-        const resp = await fetch(`${apiBase}/models`);
-        if (!resp.ok) throw new Error(`models fetch failed ${resp.status}`);
-        const data = await resp.json();
+        const data = await client.get<{ modelKey: string; displayName?: string | null }[]>('/models');
         if (cancelled) return;
         const map: Record<string, string> = {};
         for (const m of data || []) {

@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import ModelPicker from '@/components/ModelPicker';
 import { useEffect, useState } from 'react';
+import { getApiBase } from '@/lib/apiBase';
 
 type Props = {
   model?: string;
@@ -25,10 +26,7 @@ export default function TopBar({ model, setModel, showLogo = false, showStatusBa
 
   useEffect(() => {
     let cancelled = false;
-    const apiBase =
-      (process.env.NEXT_PUBLIC_API_URL ||
-        (typeof window !== 'undefined' ? window.location.origin.replace(/:3000$/, ':3001') : '')
-      ).replace(/\/$/, '');
+    const apiBase = getApiBase();
     (async () => {
       try {
         if (!apiBase) throw new Error('API base URL not configured');

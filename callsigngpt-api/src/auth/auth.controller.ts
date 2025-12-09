@@ -13,6 +13,8 @@ import {
 import { SupabaseJwtGuard } from './supabase-jwt.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { SupabaseAdminService } from './supabase-admin.service';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 
 type Plan = 'free';
 
@@ -53,7 +55,7 @@ export class AuthController {
    * and to optionally set display name on first sync.
    */
   @Post('sync')
-  async sync(@Req() req: any, @Body() body: { name?: string; phone?: string }) {
+  async sync(@Req() req: any, @Body() body: UpdateProfileDto) {
     const { id, email } = req.user as { id: string; email: string };
 
     const hasProfileUpdates = body.name !== undefined || body.phone !== undefined;
@@ -103,7 +105,7 @@ export class AuthController {
   @Post('update-profile')
   async updateProfile(
     @Req() req: any,
-    @Body() dto: { name?: string; phone?: string },
+    @Body() dto: UpdateProfileDto,
   ) {
     const { id, email } = req.user as { id: string; email: string };
 
@@ -164,12 +166,12 @@ export class AuthController {
   @Post('change-password')
   async changePassword(
     @Req() req: any,
-    @Body() dto: { oldPassword: string; newPassword: string },
+    @Body() dto: ChangePasswordDto,
   ) {
     const { id, email } = req.user as { id: string; email: string };
 
-    if (!dto?.oldPassword || !dto?.newPassword) {
-      throw new BadRequestException('oldPassword and newPassword are required');
+    if (dto.oldPassword === dto.newPassword) {
+      throw new BadRequestException('New password must be different from old password');
     }
 
     const ok = await this.supabaseAdmin.verifyPassword(email, dto.oldPassword);

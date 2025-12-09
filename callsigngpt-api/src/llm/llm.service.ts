@@ -1,6 +1,8 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
 import { ModelConfigService } from './model-config.service';
 import { SecretsService } from '../secrets/secrets.service';
+import { AppConfigService } from '../config/app-config.service';
+import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
 
 type ChatContentPart =
   | { type: 'text'; text: string }
@@ -46,6 +48,7 @@ export class LlmService {
   constructor(
     private readonly modelConfig: ModelConfigService,
     private readonly secrets: SecretsService,
+    private readonly config: AppConfigService,
   ) {}
 
   /**
@@ -53,9 +56,16 @@ export class LlmService {
    * Now filters out empty messages globally to prevent 400 errors.
    */
   async *stream(body: ChatBody, user?: { id: string }) {
+    if (!body?.model) {
+      throw new BadRequestException('model is required');
+    }
+    if (!Array.isArray(body?.messages)) {
+      throw new BadRequestException('messages must be an array');
+    }
+
     const friendly = body.model;
 
-    // ✅ Filter out empty or whitespace-only messages (supports string or multimodal content)
+    // Filter out empty or whitespace-only messages (supports string or multimodal content)
     const cleaned = (body.messages || []).filter((m) => {
       if (Array.isArray(m?.content)) return m.content.length > 0;
       return typeof m?.content === 'string' && m.content.trim().length > 0;
@@ -214,7 +224,7 @@ export class LlmService {
     // Allow large images; default ~50MB base64 unless overridden
     const MAX_IMAGE_CHARS = Math.max(
       10_000,
-      Number(process.env.MAX_IMAGE_DATA_CHARS ?? 50_000_000),
+      this.config.maxImageDataChars ?? 50_000_000,
     );
     const trimImage = (url: string) => {
       if (url.length > MAX_IMAGE_CHARS) {
@@ -249,14 +259,18 @@ export class LlmService {
     }
     if (opts.max_tokens) payload.max_tokens = opts.max_tokens;
 
-    const resp = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
+    const resp = await this.fetchWithUpstreamTimeout(
+      'OpenAI',
+      'https://api.openai.com/v1/chat/completions',
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
       },
-      body: JSON.stringify(payload),
-    });
+    );
 
     if (!resp.ok || !resp.body) {
       const txt = await resp.text().catch(() => '');
@@ -322,7 +336,7 @@ private async *streamGoogleGemini(opts: {
   };
   if (system) payload.systemInstruction = system;
 
-  const resp = await fetch(url, {
+  const resp = await this.fetchWithUpstreamTimeout('Gemini', url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -449,7 +463,7 @@ private async *streamGoogleGemini(opts: {
 
     const { system, messages } = this.toAnthropicMessages(opts.messages);
 
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    const resp = await this.fetchWithUpstreamTimeout('Anthropic', 'https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
@@ -538,7 +552,7 @@ private async *streamGoogleGemini(opts: {
     const base = (await this.secrets.get('MISTRAL_BASE_URL')) || 'https://api.mistral.ai/v1';
 
     const url = `${base.replace(/\/+$/, '')}/chat/completions`;
-    const resp = await fetch(url, {
+    const resp = await this.fetchWithUpstreamTimeout('Mistral', url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -600,7 +614,7 @@ private async *streamGoogleGemini(opts: {
     const base = (await this.secrets.get('DEEPSEEK_BASE_URL')) || 'https://api.deepseek.com/v1';
 
     const url = `${base.replace(/\/+$/, '')}/chat/completions`;
-    const resp = await fetch(url, {
+    const resp = await this.fetchWithUpstreamTimeout('DeepSeek', url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -662,7 +676,7 @@ private async *streamGoogleGemini(opts: {
     const base = (await this.secrets.get('TOGETHER_BASE_URL')) || 'https://api.together.xyz/v1';
 
     const url = `${base.replace(/\/+$/, '')}/chat/completions`;
-    const resp = await fetch(url, {
+    const resp = await this.fetchWithUpstreamTimeout('Together', url, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
@@ -708,6 +722,17 @@ private async *streamGoogleGemini(opts: {
           if (typeof piece === 'string' && piece.length > 0) yield piece;
         } catch { }
       }
+    }
+  }
+
+  private async fetchWithUpstreamTimeout(label: string, url: string, init: RequestInit): Promise<Response> {
+    try {
+      return await fetchWithTimeout(url, init, this.config.requestTimeoutMs);
+    } catch (err: any) {
+      if (err?.name === 'AbortError') {
+        throw new InternalServerErrorException(`${label} request timed out`);
+      }
+      throw new InternalServerErrorException(`${label} request failed: ${err?.message || err}`);
     }
   }
 }

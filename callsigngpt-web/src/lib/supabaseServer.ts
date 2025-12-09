@@ -5,10 +5,15 @@ import { createServerClient } from '@supabase/ssr';
 export async function supabaseServer() {
   // `cookies()` must be awaited in Next.js 15+
   const cookieStore = await cookies();
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !anon) {
+    throw new Error('Supabase env vars are missing (NEXT_PUBLIC_SUPABASE_URL/ANON_KEY)');
+  }
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anon,
     {
       cookies: {
         get(name: string) {

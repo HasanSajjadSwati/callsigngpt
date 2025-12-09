@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
+import { getApiBase } from '@/lib/apiBase';
 
 export type ModelPickerProps = {
   value: string;
@@ -25,10 +26,7 @@ export default function ModelPicker({ value, onChange }: ModelPickerProps) {
 
   useEffect(() => {
     let cancelled = false;
-    const apiBase =
-      (process.env.NEXT_PUBLIC_API_URL ||
-        (typeof window !== 'undefined' ? window.location.origin.replace(/:3000$/, ':3001') : '')
-      ).replace(/\/$/, '');
+    const apiBase = getApiBase();
     (async () => {
       try {
         if (!apiBase) throw new Error('API base URL not configured');
