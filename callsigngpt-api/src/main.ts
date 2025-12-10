@@ -42,7 +42,7 @@ async function bootstrap() {
   });
 
   // Simple IP-based rate limiter to reduce abuse
-  await fastify.register(fastifyRateLimit, {
+  await fastify.register(fastifyRateLimit as any, {
     max: config.rateLimitMax,
     timeWindow: config.rateLimitWindowMs,
     allowList: ['127.0.0.1', '::1'], // keep localhost unrestricted for dev
