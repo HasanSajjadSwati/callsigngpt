@@ -236,32 +236,49 @@ export default function Sidebar({
 
     (async function load() {
       setLoading(true);
-      const loadFromLocalApi = async () => {
+      const isAuthError = (err: any) => {
+        const msg = (err?.message || '').toString().toLowerCase();
+        return msg.includes('401') || msg.includes('unauthorized');
+      };
+      const loadFromLocalApi = async (): Promise<Item[]> => {
         const res = await fetch('/api/conversations', {
           cache: 'no-store',
           credentials: 'include',
           headers: { ...authHeaders } as HeadersInit,
         });
         const data = res.ok ? await res.json() : { conversations: [] };
-        if (!cancelled) setItems(data.conversations ?? []);
+        return (data.conversations ?? []) as Item[];
       };
 
       try {
+        const localList = await loadFromLocalApi();
+        if (!cancelled && Array.isArray(localList) && localList.length > 0) {
+          setItems(localList);
+          return;
+        }
+
         if (authedClient) {
-          const data = await authedClient.get<{ conversations?: Item[] } | Item[]>('/conversations');
-          const list = (data as any)?.conversations ?? data;
-          if (!cancelled && Array.isArray(list) && list.length > 0) {
-            setItems(list);
-            return;
+          try {
+            const data = await authedClient.get<{ conversations?: Item[] } | Item[]>('/conversations');
+            const list = (data as any)?.conversations ?? data;
+            if (!cancelled && Array.isArray(list) && list.length > 0) {
+              setItems(list);
+              return;
+            }
+          } catch (err) {
+            if (!isAuthError(err)) {
+              console.error('[Sidebar] failed to load conversations (external)', err);
+            }
           }
         }
 
-        await loadFromLocalApi();
-      } catch {
+        if (!cancelled) setItems(localList);
+      } catch (err) {
         if (!cancelled) {
-          console.error('[Sidebar] failed to load conversations');
+          console.error('[Sidebar] failed to load conversations', err);
           try {
-            await loadFromLocalApi();
+            const fallback = await loadFromLocalApi();
+            setItems(fallback);
           } catch {
             setItems([]);
           }
@@ -290,7 +307,10 @@ export default function Sidebar({
               }
             }
           } catch (err) {
-            console.error('[Sidebar] background refresh (external) failed', err);
+            const msg = (err as any)?.message?.toString().toLowerCase() || '';
+            if (!msg.includes('401') && !msg.includes('unauthorized')) {
+              console.error('[Sidebar] background refresh (external) failed', err);
+            }
           }
 
           fetch('/api/conversations', {

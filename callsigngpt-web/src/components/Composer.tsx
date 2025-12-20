@@ -195,7 +195,7 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 text-white transition-all duration-200 hover:border-white/40 hover:bg-white/10 hover:-translate-y-0.5"
+                className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-white transition-all duration-200 hover:border-white/40 hover:bg-white/20 hover:-translate-y-0.5"
                 aria-label="Attach file (images/files supported on select models)"
                 title="Attach file (images/files supported on select models)"
               >

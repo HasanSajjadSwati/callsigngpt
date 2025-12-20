@@ -51,15 +51,16 @@ export class HttpClient {
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
+      const hasBody = body !== undefined;
       const res = await fetch(this.buildUrl(path), {
         ...init,
         method,
         headers: {
-          'Content-Type': 'application/json',
+          ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
           ...this.defaultHeaders,
           ...(init?.headers as Record<string, string>),
         },
-        body: body === undefined ? undefined : JSON.stringify(body),
+        body: hasBody ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       });
 

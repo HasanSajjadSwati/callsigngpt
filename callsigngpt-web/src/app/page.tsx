@@ -89,7 +89,6 @@ function HomeInner() {
     () => (accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     [accessToken],
   );
-  const isExternalApi = Boolean(getApiBase());
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Delete confirmation state
@@ -126,52 +125,53 @@ function HomeInner() {
 
   const patchConversation = useCallback(
     async (id: string, body: Record<string, any>) => {
-      // Prefer external when available, then fall back to local
-      if (conversationClient) {
-        try {
-          await conversationClient.patch(`/conversations/${id}`, body);
-          return;
-        } catch (err) {
-          console.warn('External patch failed, falling back to local:', err);
-        }
-      }
+      const patchExternal = async () => {
+        if (!conversationClient) return false;
+        await conversationClient.patch(`/conversations/${id}`, body);
+        return true;
+      };
 
-      const res = await fetch(`/api/conversations/${id}`, {
-        method: 'PATCH',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
-        body: JSON.stringify(body),
-      });
+      const patchLocal = async () => {
+        const res = await fetch(`/api/conversations/${id}`, {
+          method: 'PATCH',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
+          body: JSON.stringify(body),
+        });
+        if (res.ok) return true;
+        return false;
+      };
 
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => res.statusText || 'Unknown error');
-        throw new Error(errorText || 'Failed to update conversation');
-      }
+      if (await patchLocal()) return;
+      if (await patchExternal()) return;
+
+      throw new Error('Failed to update conversation');
     },
     [conversationClient, authHeaders],
   );
 
   const deleteConversation = useCallback(
     async (id: string) => {
-      // Prefer external when available, then fall back to local
-      if (conversationClient) {
-        try {
-          await conversationClient.delete(`/conversations/${id}`);
-          return;
-        } catch (err) {
-          console.warn('External delete failed, falling back to local:', err);
-        }
-      }
+      const deleteExternal = async () => {
+        if (!conversationClient) return false;
+        await conversationClient.delete(`/conversations/${id}`);
+        return true;
+      };
 
-      const res = await fetch(`/api/conversations/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-        headers: { ...authHeaders } as HeadersInit,
-      });
-      if (!res.ok) {
-        const errorText = await res.text().catch(() => res.statusText || 'Unknown error');
-        throw new Error(errorText || 'Failed to delete conversation');
-      }
+      const deleteLocal = async () => {
+        const res = await fetch(`/api/conversations/${id}`, {
+          method: 'DELETE',
+          credentials: 'include',
+          headers: { ...authHeaders } as HeadersInit,
+        });
+        if (res.ok) return true;
+        return false;
+      };
+
+      if (await deleteLocal()) return;
+      if (await deleteExternal()) return;
+
+      throw new Error('Failed to delete conversation');
     },
     [conversationClient, authHeaders],
   );
@@ -232,13 +232,30 @@ function HomeInner() {
           credentials: 'include',
           headers: { ...authHeaders } as HeadersInit,
         });
-        if (!r.ok) return;
-        const { conversation } = await r.json();
-        if (!cancelled && conversation?.model) {
-          _setModel(conversation.model);
+        if (r.ok) {
+          const { conversation } = await r.json();
+          if (!cancelled && conversation?.model) {
+            _setModel(conversation.model);
+            return;
+          }
         }
       } catch (e) {
         console.error('Failed to hydrate model from DB:', e);
+      }
+
+      try {
+        if (conversationClient) {
+          const data = await conversationClient.get(`/conversations/${conversationId}`);
+          const conversation = (data as any)?.conversation ?? data;
+          if (!cancelled && conversation?.model) {
+            _setModel(conversation.model);
+          }
+        }
+      } catch (e) {
+        const msg = (e as Error)?.message || '';
+        if (!/404/.test(msg)) {
+          console.error('Failed to hydrate model from API:', e);
+        }
       }
     }
 
@@ -246,7 +263,7 @@ function HomeInner() {
     return () => {
       cancelled = true;
     };
-  }, [conversationId, _setModel, authHeaders]);
+  }, [conversationId, _setModel, authHeaders, conversationClient]);
 
   // Auto-scroll on new messages
   const scrollerRef = useRef<HTMLDivElement>(null);

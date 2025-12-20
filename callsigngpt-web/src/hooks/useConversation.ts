@@ -47,7 +47,6 @@ export function useConversation(
   const apiBase = getApiBase();
   const conversationApiBase = apiBase || APP_CONFIG.api.baseUrl;
   const apiCredentials = APP_CONFIG.api.credentials as RequestCredentials;
-  const isExternalApi = Boolean(apiBase);
   const authedClient = useMemo(
     () =>
       opts?.apiClient ??
@@ -191,59 +190,58 @@ export function useConversation(
 
     let cancelled = false;
 
-    const fetchFromLocal = async () => {
-      const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations/${id}`, {
-        method: 'GET',
-        credentials: apiCredentials,
-        headers: {
-          ...authHeaders,
-        } as HeadersInit,
-        cache: 'no-store',
-      });
-      if (!res.ok) return null;
-      const data = await res.json();
-      return extractConversation(data);
+    const fetchConversation = async () => {
+      const tryLocal = async () => {
+        try {
+          const res = await fetch(`/api/conversations/${id}`, {
+            method: 'GET',
+            credentials: apiCredentials,
+            headers: {
+              ...authHeaders,
+            } as HeadersInit,
+            cache: 'no-store',
+          });
+          if (!res.ok) return null;
+          const data = await res.json();
+          if (cancelled) return null;
+          return extractConversation(data);
+        } catch (err: any) {
+          if (!cancelled) {
+            console.error(
+              `[useConversation] Failed to load conversation ${id} via local API:`,
+              err?.message || err,
+            );
+          }
+          return null;
+        }
+      };
+
+      const tryExternal = async () => {
+        if (!authedClient) return null;
+        try {
+          const data = await authedClient.get(`/conversations/${id}`);
+          if (cancelled) return null;
+          return extractConversation(data);
+        } catch (err: any) {
+          const msg = err?.message || '';
+          const is404 = /404/.test(msg);
+          if (!cancelled && !is404) {
+            console.error(
+              `[useConversation] Failed to load conversation ${id} via API:`,
+              msg || err,
+            );
+          }
+          return null;
+        }
+      };
+
+      return (await tryLocal()) ?? (await tryExternal());
     };
 
     (async () => {
       setLoadingConversation(true);
       try {
-        let convo: any = null;
-
-        // Prefer local DB (Next API) first so data stays in sync
-        try {
-          convo = await fetchFromLocal();
-        } catch {
-          // ignore
-        }
-
-        // If local did not return data, try external when configured
-        if (!convo && isExternalApi && authedClient) {
-          try {
-            const data = await authedClient.get(`/conversations/${id}`);
-            convo = extractConversation(data);
-          } catch (err: any) {
-            if (cancelled) return;
-            console.error(
-              `[useConversation] Failed to load conversation ${id}:`,
-              err?.message || err,
-            );
-          }
-        }
-
-        // As a last resort, try external in same-origin mode
-        if (!convo && authedClient && !isExternalApi) {
-          try {
-            const data = await authedClient.get(`/conversations/${id}`);
-            convo = extractConversation(data);
-          } catch (err: any) {
-            if (cancelled) return;
-            console.error(
-              `[useConversation] Failed to load conversation ${id}:`,
-              err?.message || err,
-            );
-          }
-        }
+        const convo = await fetchConversation();
 
         if (!convo) {
           lastFailedConversationId.current = id;
@@ -316,7 +314,7 @@ export function useConversation(
     return () => {
       cancelled = true;
     };
-  }, [search, conversationId, resetLocal, authedClient, apiBase, apiCredentials, isExternalApi, clearConversationQuery, authHeaders]);
+  }, [search, conversationId, resetLocal, authedClient, apiBase, apiCredentials, clearConversationQuery, authHeaders]);
 
   /** Create conversation on server if missing */
   const ensureConversation = useCallback(async () => {
@@ -336,32 +334,37 @@ export function useConversation(
 
       let newId: string | undefined;
 
-      // Create via local API first (DB of record)
-      try {
-        const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations`, {
-          method: 'POST',
-          credentials: apiCredentials,
-          headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
-          body: JSON.stringify({ title, model, messages: currentMsgs }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          newId = data?.conversation?.id;
-        }
-      } catch {
-        // ignore, try external next
-      }
-
-      // Fallback to external if local failed and external is available
-      if (!newId && authedClient) {
+      const createLocal = async () => {
         try {
-          const data = await authedClient.post(`/conversations`, { title, model, messages: currentMsgs });
-          const convo = extractConversation(data);
-          newId = convo?.id;
+          const res = await fetch(`/api/conversations`, {
+            method: 'POST',
+            credentials: apiCredentials,
+            headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
+            body: JSON.stringify({ title, model, messages: currentMsgs }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            return data?.conversation?.id as string | undefined;
+          }
         } catch {
           // ignore
         }
-      }
+        return undefined;
+      };
+
+      const createExternal = async () => {
+        if (!authedClient) return undefined;
+        try {
+          const data = await authedClient.post(`/conversations`, { title, model, messages: currentMsgs });
+          const convo = extractConversation(data);
+          return convo?.id;
+        } catch (err) {
+          console.error('[useConversation] Failed to create conversation via API:', err);
+          return undefined;
+        }
+      };
+
+      newId = (await createLocal()) ?? (await createExternal());
 
       if (newId) {
         createdOnServer.current = true;
@@ -384,35 +387,41 @@ export function useConversation(
       isCreatingConversation.current = false;
       pendingConversationId.current = null;
     }
-  }, [msgs, model, conversationId, router, search, authedClient, apiBase, apiCredentials, isExternalApi, authHeaders]);
+  }, [msgs, model, conversationId, router, search, authedClient, apiCredentials, authHeaders]);
 
   const sendConversationPatch = useCallback(
     async (cid: string, body: Record<string, any>, logCtx = '[appendMessages]') => {
-      // Try local DB first
-      try {
-        const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations/${cid}`, {
-          method: 'PATCH',
-          credentials: apiCredentials,
-          headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
-          body: JSON.stringify(body),
-        });
-        if (res.ok) return;
-        console.error(`${logCtx} Failed to save messages locally:`, res.status, res.statusText);
-      } catch (err) {
-        console.error(`${logCtx} Local save errored:`, err);
-      }
+      const saveLocal = async () => {
+        try {
+          const res = await fetch(`/api/conversations/${cid}`, {
+            method: 'PATCH',
+            credentials: apiCredentials,
+            headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
+            body: JSON.stringify(body),
+          });
+          if (res.ok) return true;
+          console.error(`${logCtx} Failed to save messages locally:`, res.status, res.statusText);
+        } catch (err) {
+          console.error(`${logCtx} Local save errored:`, err);
+        }
+        return false;
+      };
 
-      // Fallback to external if available
-      if (authedClient) {
+      const saveExternal = async () => {
+        if (!authedClient) return false;
         try {
           await authedClient.patch(`/conversations/${cid}`, body);
-          return;
+          return true;
         } catch (err: any) {
-          console.error(`${logCtx} Failed to save messages via external API:`, err?.message || err);
+          console.error(`${logCtx} Failed to save messages via API:`, err?.message || err);
+          return false;
         }
-      }
+      };
+
+      if (await saveLocal()) return;
+      await saveExternal();
     },
-    [apiBase, apiCredentials, isExternalApi, authedClient, authHeaders],
+    [apiCredentials, authedClient, authHeaders],
   );
 
   /** Append messages plus persist */
