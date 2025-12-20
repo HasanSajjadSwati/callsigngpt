@@ -452,7 +452,7 @@ export default function Sidebar({
                   setEditingId(null);
                   try {
                     await onRename(c.id, newTitle);
-                  } catch (error) {
+                  } catch {
                     setItems((prev) =>
                       prev.map((item) => (item.id === c.id ? { ...item, title: oldTitle } : item))
                     );

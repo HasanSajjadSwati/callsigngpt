@@ -332,8 +332,6 @@ export function useConversation(
         firstUser?.content?.slice(0, APP_CONFIG.conversation.maxTitleLength) ||
         UI_TEXT.app.newChatTitle;
 
-      let newId: string | undefined;
-
       const createLocal = async () => {
         try {
           const res = await fetch(`/api/conversations`, {
@@ -364,7 +362,7 @@ export function useConversation(
         }
       };
 
-      newId = (await createLocal()) ?? (await createExternal());
+      const newId = (await createLocal()) ?? (await createExternal());
 
       if (newId) {
         createdOnServer.current = true;
@@ -383,7 +381,7 @@ export function useConversation(
           }, 500);
         }
       }
-    } catch (_error) {
+    } catch {
       isCreatingConversation.current = false;
       pendingConversationId.current = null;
     }
