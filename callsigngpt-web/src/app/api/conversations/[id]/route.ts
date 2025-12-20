@@ -6,6 +6,10 @@ import { supabaseServer } from '@/lib/supabaseServer';
 type AnyMessage = { role?: string; content?: string | null };
 const MAX_TITLE_LENGTH = APP_CONFIG.conversation.maxTitleLength ?? 80;
 const PLACEHOLDER_TITLE = UI_TEXT.app.newChatTitle.toLowerCase();
+const getBearerToken = (req: Request) => {
+  const auth = req.headers.get('authorization') || '';
+  return auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+};
 
 function deriveTitle(messages: AnyMessage[] | undefined, fallback = UI_TEXT.app.newChatTitle) {
   if (!Array.isArray(messages)) return fallback;
@@ -32,13 +36,15 @@ type IdParams = { id: string };
 
 // GET /api/conversations/:id  -> { conversation }
 export async function GET(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<IdParams> } // <-- Next 15: params is async
 ) {
   const { id } = await ctx.params;     // <-- await it
   const sb = await supabaseServer();
-
-  const { data: { user } = { user: null } } = await sb.auth.getUser();
+  const token = getBearerToken(req);
+  const { data: { user } = { user: null } } = token
+    ? await sb.auth.getUser(token)
+    : await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const { data, error } = await sb
@@ -60,8 +66,10 @@ export async function PATCH(
 ) {
   const { id } = await ctx.params;     // <-- await it
   const sb = await supabaseServer();
-
-  const { data: { user } = { user: null } } = await sb.auth.getUser();
+  const token = getBearerToken(req);
+  const { data: { user } = { user: null } } = token
+    ? await sb.auth.getUser(token)
+    : await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
@@ -101,13 +109,16 @@ export async function PATCH(
 
 // (optional) DELETE /api/conversations/:id
 export async function DELETE(
-  _req: Request,
+  req: Request,
   ctx: { params: Promise<IdParams> }
 ) {
   const { id } = await ctx.params;
   const sb = await supabaseServer();
 
-  const { data: { user } = { user: null } } = await sb.auth.getUser();
+  const token = getBearerToken(req);
+  const { data: { user } = { user: null } } = token
+    ? await sb.auth.getUser(token)
+    : await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const { data: existing, error: readErr } = await sb

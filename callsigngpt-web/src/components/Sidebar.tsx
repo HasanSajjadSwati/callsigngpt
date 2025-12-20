@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { getApiBase } from '@/lib/apiBase';
 import { HttpClient } from '@/lib/httpClient';
+import { APP_CONFIG } from '@/config/uiText';
 import ReportProblemDialog from './ReportProblemDialog';
 
 type Item = { id: string; title: string };
@@ -153,7 +154,7 @@ export default function Sidebar({
   onSelect,
   onRename,
   onDelete,
-  onClearAll,
+  onClearAll: _onClearAll,
   onClose,
 }: {
   currentId: string | null;
@@ -181,10 +182,18 @@ export default function Sidebar({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const apiBase = getApiBase();
+  const isExternalApi = Boolean(apiBase);
+  const authHeaders = useMemo(
+    () => (accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    [accessToken],
+  );
   const authedClient = useMemo(
     () =>
       accessToken
-        ? new HttpClient({ baseUrl: apiBase, headers: { Authorization: `Bearer ${accessToken}` } })
+        ? new HttpClient({
+            baseUrl: apiBase || APP_CONFIG.api.baseUrl,
+            headers: { Authorization: `Bearer ${accessToken}` },
+          })
         : null,
     [accessToken, apiBase],
   );
@@ -212,7 +221,7 @@ export default function Sidebar({
         if (!cancelled) {
           setPlan((data?.tier ?? data?.plan ?? 'free') as string);
         }
-      } catch (err) {
+      } catch {
         if (!cancelled) setPlan(null);
       }
     })();
@@ -220,21 +229,42 @@ export default function Sidebar({
     return () => {
       cancelled = true;
     };
-  }, [accessToken, authedClient]);
+  }, [accessToken, authedClient, isExternalApi, authHeaders]);
 
   useEffect(() => {
     let cancelled = false;
 
     (async function load() {
       setLoading(true);
-      try {
-        const res = await fetch('/api/conversations', { cache: 'no-store' });
+      const loadFromLocalApi = async () => {
+        const res = await fetch('/api/conversations', {
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { ...authHeaders } as HeadersInit,
+        });
         const data = res.ok ? await res.json() : { conversations: [] };
         if (!cancelled) setItems(data.conversations ?? []);
-      } catch (err) {
+      };
+
+      try {
+        if (authedClient) {
+          const data = await authedClient.get<{ conversations?: Item[] } | Item[]>('/conversations');
+          const list = (data as any)?.conversations ?? data;
+          if (!cancelled && Array.isArray(list) && list.length > 0) {
+            setItems(list);
+            return;
+          }
+        }
+
+        await loadFromLocalApi();
+      } catch {
         if (!cancelled) {
-          console.error('[Sidebar] failed to load conversations:', err);
-          setItems([]);
+          console.error('[Sidebar] failed to load conversations');
+          try {
+            await loadFromLocalApi();
+          } catch {
+            setItems([]);
+          }
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -244,30 +274,51 @@ export default function Sidebar({
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, authedClient, apiBase, isExternalApi, authHeaders]);
 
   useEffect(() => {
     if (reloadKey && reloadKey > 0 && !loading) {
       const timeoutId = setTimeout(() => {
-        fetch('/api/conversations', { cache: 'no-store' })
-          .then((res) => (res.ok ? res.json() : { conversations: [] }))
-          .then((data) => {
-            setItems((prev) => {
-              const serverItems = data.conversations ?? [];
-              if (serverItems.length > 0) {
-                return serverItems;
+        const refresh = async () => {
+          try {
+            if (authedClient) {
+              const data = await authedClient.get<{ conversations?: Item[] } | Item[]>('/conversations');
+              const list = (data as any)?.conversations ?? data;
+              if (Array.isArray(list) && list.length > 0) {
+                setItems(list);
+                return;
               }
-              return prev;
-            });
+            }
+          } catch (err) {
+            console.error('[Sidebar] background refresh (external) failed', err);
+          }
+
+          fetch('/api/conversations', {
+            cache: 'no-store',
+            credentials: 'include',
+            headers: { ...authHeaders } as HeadersInit,
           })
-          .catch((err) => {
-            console.error('[Sidebar] background refresh failed:', err);
-          });
+            .then((res) => (res.ok ? res.json() : { conversations: [] }))
+            .then((data) => {
+              setItems((prev) => {
+                const serverItems = data.conversations ?? [];
+                if (serverItems.length > 0) {
+                  return serverItems;
+                }
+                return prev;
+              });
+            })
+            .catch(() => {
+              console.error('[Sidebar] background refresh failed');
+            });
+        };
+
+        void refresh();
       }, 100);
 
       return () => clearTimeout(timeoutId);
     }
-  }, [reloadKey, loading]);
+  }, [reloadKey, loading, authedClient, authHeaders]);
 
   const formattedPlan = (plan ?? 'free').charAt(0).toUpperCase() + (plan ?? 'free').slice(1);
 
@@ -339,7 +390,7 @@ export default function Sidebar({
                 }}
                 onRename={() => setEditingId(c.id)}
                 onDelete={async () => {
-                  const removedItem = c;
+                  const _removedItem = c;
                   let previousItems: Item[] = [];
                   setItems((prev) => {
                     previousItems = prev;
@@ -351,7 +402,23 @@ export default function Sidebar({
                     if (error instanceof Error && (error.message === 'Deletion cancelled' || error.message.includes('cancelled'))) {
                       setItems(previousItems);
                     } else {
-                      const res = await fetch('/api/conversations', { cache: 'no-store' });
+                      try {
+                        if (authedClient) {
+                          const data = await authedClient.get<{ conversations?: Item[] } | Item[]>('/conversations');
+                          const list = (data as any)?.conversations ?? data;
+                          if (Array.isArray(list) && list.length > 0) {
+                            setItems(list);
+                            return;
+                          }
+                        }
+                      } catch {
+                        // fall through to local
+                      }
+                      const res = await fetch('/api/conversations', {
+                        cache: 'no-store',
+                        credentials: 'include',
+                        headers: { ...authHeaders } as HeadersInit,
+                      });
                       const data = res.ok ? await res.json() : { conversations: [] };
                       setItems(data.conversations ?? []);
                     }

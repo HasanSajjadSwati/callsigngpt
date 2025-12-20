@@ -1,8 +1,11 @@
 'use client';
 
-import { Suspense, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
+import { HttpClient } from '@/lib/httpClient';
+import { getApiBase } from '@/lib/apiBase';
+import { APP_CONFIG } from '@/config/uiText';
 
 import TopBar from '@/components/TopBar';
 import Sidebar from '@/components/Sidebar';
@@ -70,6 +73,23 @@ function normalizeErrorMessage(raw: string): string {
 function HomeInner() {
   const router = useRouter();
   const { session, accessToken, loading: authLoading } = useAuth();
+  const apiBase = getApiBase();
+  const conversationApiBase = apiBase || APP_CONFIG.api.baseUrl;
+  const conversationClient = useMemo(
+    () =>
+      accessToken
+        ? new HttpClient({
+            baseUrl: conversationApiBase,
+            headers: { Authorization: `Bearer ${accessToken}` },
+          })
+        : null,
+    [accessToken, conversationApiBase],
+  );
+  const authHeaders = useMemo(
+    () => (accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    [accessToken],
+  );
+  const isExternalApi = Boolean(getApiBase());
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Delete confirmation state
@@ -97,23 +117,70 @@ function HomeInner() {
     setMsgs,
     conversationId,
     sidebarReloadKey,
-    setSidebarReloadKey,
     ensureConversation,
     appendMessages,
     saveCurrentChatIfNeeded,
     resetToNewChat,
     loadingConversation,
-  } = useConversation(modelState);
+  } = useConversation(modelState, { accessToken, apiClient: conversationClient });
+
+  const patchConversation = useCallback(
+    async (id: string, body: Record<string, any>) => {
+      // Prefer external when available, then fall back to local
+      if (conversationClient) {
+        try {
+          await conversationClient.patch(`/conversations/${id}`, body);
+          return;
+        } catch (err) {
+          console.warn('External patch failed, falling back to local:', err);
+        }
+      }
+
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => res.statusText || 'Unknown error');
+        throw new Error(errorText || 'Failed to update conversation');
+      }
+    },
+    [conversationClient, authHeaders],
+  );
+
+  const deleteConversation = useCallback(
+    async (id: string) => {
+      // Prefer external when available, then fall back to local
+      if (conversationClient) {
+        try {
+          await conversationClient.delete(`/conversations/${id}`);
+          return;
+        } catch (err) {
+          console.warn('External delete failed, falling back to local:', err);
+        }
+      }
+
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+        headers: { ...authHeaders } as HeadersInit,
+      });
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => res.statusText || 'Unknown error');
+        throw new Error(errorText || 'Failed to delete conversation');
+      }
+    },
+    [conversationClient, authHeaders],
+  );
 
   const setModelAndPersist = async (nextModel: string) => {
     _setModel(nextModel); // update UI immediately
     if (conversationId) {
       try {
-        await fetch(`/api/conversations/${conversationId}`, {
-          method: 'PATCH',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ model: nextModel }),
-        });
+        await patchConversation(conversationId, { model: nextModel });
       } catch (e) {
         console.error('Failed to persist model:', e);
       }
@@ -160,7 +227,11 @@ function HomeInner() {
     async function hydrateModelFromDB() {
       if (!conversationId) return;
       try {
-        const r = await fetch(`/api/conversations/${conversationId}`, { cache: 'no-store' });
+        const r = await fetch(`/api/conversations/${conversationId}`, {
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { ...authHeaders } as HeadersInit,
+        });
         if (!r.ok) return;
         const { conversation } = await r.json();
         if (!cancelled && conversation?.model) {
@@ -175,7 +246,7 @@ function HomeInner() {
     return () => {
       cancelled = true;
     };
-  }, [conversationId, _setModel]);
+  }, [conversationId, _setModel, authHeaders]);
 
   // Auto-scroll on new messages
   const scrollerRef = useRef<HTMLDivElement>(null);
@@ -271,17 +342,7 @@ function HomeInner() {
               onSelect={handleSelectChat}
               onClose={() => setSidebarOpen(false)}
               onRename={async (id, newTitle) => {
-                const patchRes = await fetch(`/api/conversations/${id}`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ title: newTitle }),
-                });
-
-                if (!patchRes.ok) {
-                  const errorText = await patchRes.text().catch(() => 'Unknown error');
-                  console.error('Failed to rename conversation:', errorText);
-                  throw new Error(`Failed to rename: ${errorText}`);
-                }
+                await patchConversation(id, { title: newTitle });
               }}
               onDelete={async (id) => {
                 return new Promise<void>((resolve, reject) => {
@@ -293,16 +354,7 @@ function HomeInner() {
                       setDeleteConfirm({ isOpen: false, id: null, onConfirm: null });
                       deleteConfirmRef.current.reject = null;
                       try {
-                        const res = await fetch(`/api/conversations/${id}`, {
-                          method: 'DELETE',
-                        });
-
-                        if (!res.ok) {
-                          const errorText = await res.text().catch(() => 'Unknown error');
-                          console.error('Failed to delete conversation:', errorText);
-                          throw new Error(`Failed to delete: ${errorText}`);
-                        }
-
+                        await deleteConversation(id);
                         if (conversationId === id) {
                           resetToNewChat();
                         }

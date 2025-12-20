@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Patch, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import type { FastifyRequest } from 'fastify';
 import { ConversationsService, Msg } from './conversations.service';
 import { SupabaseJwtGuard } from '../auth/supabase-jwt.guard';
@@ -33,5 +33,11 @@ export class ConversationsController {
     const user = (req as any).user as { id: string };
     const { title, messages } = body || {};
     return this.svc.update(user.id, id, { title, messages });
+  }
+
+  @Delete(':id')
+  delete(@Param('id') id: string, @Req() req: FastifyRequest) {
+    const user = (req as any).user as { id: string };
+    return this.svc.delete(user.id, id);
   }
 }

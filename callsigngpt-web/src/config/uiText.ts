@@ -23,10 +23,10 @@ export const UI_TEXT = {
 
 // Other tweakable runtime constants
 export const APP_CONFIG = {
-  api: {
-    baseUrl: "/api", // prefix for API endpoints
-    credentials: "include" as RequestCredentials,
-  },
+ api: {
+  baseUrl: "https://api.callsigngpt.com",  // use YOUR actual API domain
+  credentials: "include",
+},
   conversation: {
     greetingRole: "system",
     maxTitleLength: 80,      // truncate derived chat titles

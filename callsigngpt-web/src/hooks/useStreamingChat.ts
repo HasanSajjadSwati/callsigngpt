@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { streamChat, type ChatMessage, type ChatContentPart } from '@/lib/streamChat';
 import { UIMsg, Attachment } from '@/lib/chat';
 import { getApiBase } from '@/lib/apiBase';
@@ -181,7 +181,6 @@ export function useStreamingChat({
       ctrlRef.current = null;
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [model]);
 
   const send = useCallback(

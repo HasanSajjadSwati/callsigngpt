@@ -111,7 +111,6 @@ export default function AccountPage() {
     setPhone(normalizedPhone);
     setPhoneError(isValidPhoneLength(normalizedPhone) ? null : PHONE_LENGTH_ERROR);
     loadMe();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, session, accessToken]);
 
   // --- Actions --------------------------------------------------------------

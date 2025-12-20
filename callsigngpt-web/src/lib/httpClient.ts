@@ -29,6 +29,10 @@ export class HttpClient {
     return this.request<T>('POST', path, body, init);
   }
 
+  async patch<T = any>(path: string, body?: unknown, init?: RequestInit): Promise<T> {
+    return this.request<T>('PATCH', path, body, init);
+  }
+
   async delete<T = any>(path: string, body?: unknown, init?: RequestInit): Promise<T> {
     return this.request<T>('DELETE', path, body, init);
   }

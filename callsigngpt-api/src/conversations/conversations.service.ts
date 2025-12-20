@@ -95,4 +95,11 @@ export class ConversationsService {
     map.set(id, c);
     return c;
   }
+
+  delete(userId: string, id: string) {
+    const map = this.userMap(userId);
+    const existed = map.delete(id);
+    if (!existed) throw new NotFoundException('Conversation not found');
+    return { ok: true };
+  }
 }

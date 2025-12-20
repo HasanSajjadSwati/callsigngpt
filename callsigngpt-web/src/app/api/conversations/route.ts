@@ -8,6 +8,10 @@ const MAX_TITLE_LENGTH = APP_CONFIG.conversation.maxTitleLength ?? 80;
 const PLACEHOLDER_TITLE = UI_TEXT.app.newChatTitle.toLowerCase();
 const MAX_MESSAGES = 200;
 const MAX_MESSAGE_LENGTH = 4000;
+const getBearerToken = (req: Request) => {
+  const auth = req.headers.get('authorization') || '';
+  return auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+};
 
 function deriveTitle(
   messages: AnyMessage[] | undefined,
@@ -35,9 +39,12 @@ function pickTitle(provided: string | undefined, messages?: AnyMessage[]) {
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: Request) {
   const sb = await supabaseServer();
-  const { data: { user } = { user: null } } = await sb.auth.getUser();
+  const token = getBearerToken(req);
+  const { data: { user } = { user: null } } = token
+    ? await sb.auth.getUser(token)
+    : await sb.auth.getUser();
 
   if (!user) {
     return NextResponse.json({ conversations: [] }, { status: 200 });
@@ -61,7 +68,10 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const sb = await supabaseServer();
-  const { data: { user } = { user: null } } = await sb.auth.getUser();
+  const token = getBearerToken(req);
+  const { data: { user } = { user: null } } = token
+    ? await sb.auth.getUser(token)
+    : await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const bodySchema = z.object({
@@ -115,9 +125,12 @@ export async function POST(req: Request) {
 }
 
 /** NEW: clear all conversations for the current user */
-export async function DELETE() {
+export async function DELETE(req: Request) {
   const sb = await supabaseServer();
-  const { data: { user } = { user: null } } = await sb.auth.getUser();
+  const token = getBearerToken(req);
+  const { data: { user } = { user: null } } = token
+    ? await sb.auth.getUser(token)
+    : await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const { error } = await sb.from('conversations').delete().eq('user_id', user.id);

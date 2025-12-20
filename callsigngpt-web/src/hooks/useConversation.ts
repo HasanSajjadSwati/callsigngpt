@@ -1,7 +1,7 @@
 // callsigngpt-web/src/hooks/useConversation.ts
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { UI_TEXT, APP_CONFIG, getSystemGreeting } from '@/config/uiText';
 import { UIMsg } from '@/lib/chat';
@@ -20,10 +20,49 @@ function buildSystemMessage(modelKey: string, labels: Record<string, string>): U
   };
 }
 
-export function useConversation(modelState: [string, (v: string) => void]) {
+const extractConversation = (data: any) => (data?.conversation ? data.conversation : data);
+type ConversationOpts = { accessToken?: string; apiClient?: HttpClient | null };
+
+type UseConversationReturn = {
+  msgs: UIMsg[];
+  setMsgs: React.Dispatch<React.SetStateAction<UIMsg[]>>;
+  conversationId: string | null;
+  sidebarReloadKey: number;
+  setSidebarReloadKey: React.Dispatch<React.SetStateAction<number>>;
+  ensureConversation: () => Promise<void>;
+  appendMessages: (...newMessages: UIMsg[]) => Promise<void>;
+  saveCurrentChatIfNeeded: () => Promise<void>;
+  resetToNewChat: () => void;
+  loadingConversation: boolean;
+};
+export function useConversation(
+  modelState: [string, (v: string) => void],
+  opts: ConversationOpts = {},
+): UseConversationReturn {
   const [model] = modelState;
   const router = useRouter();
   const search = useSearchParams();
+  const accessToken = opts?.accessToken;
+
+  const apiBase = getApiBase();
+  const conversationApiBase = apiBase || APP_CONFIG.api.baseUrl;
+  const apiCredentials = APP_CONFIG.api.credentials as RequestCredentials;
+  const isExternalApi = Boolean(apiBase);
+  const authedClient = useMemo(
+    () =>
+      opts?.apiClient ??
+      (accessToken
+        ? new HttpClient({
+            baseUrl: conversationApiBase,
+            headers: { Authorization: `Bearer ${accessToken}` },
+          })
+        : null),
+    [opts?.apiClient, accessToken, conversationApiBase],
+  );
+  const authHeaders = useMemo(
+    () => (accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    [accessToken],
+  );
 
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
   const modelRef = useRef(model);
@@ -55,6 +94,18 @@ export function useConversation(modelState: [string, (v: string) => void]) {
   const createdOnServer = useRef(false);
   const isCreatingConversation = useRef(false);
   const pendingConversationId = useRef<string | null>(null); // Track conversation being created
+  const lastFailedConversationId = useRef<string | null>(null); // Prevent hammering missing IDs
+
+  const clearConversationQuery = useCallback(
+    (expectedId?: string | null) => {
+      if (typeof window === 'undefined') return;
+      const url = new URL(window.location.href);
+      if (expectedId && url.searchParams.get('c') !== expectedId) return;
+      url.searchParams.delete('c');
+      router.replace(`${url.pathname}${url.search}`);
+    },
+    [router],
+  );
 
   /** Shared local reset */
   const resetLocal = useCallback(() => {
@@ -107,7 +158,11 @@ export function useConversation(modelState: [string, (v: string) => void]) {
   // Load conversation when ?c changes
   useEffect(() => {
     const id = search.get('c');
-    
+    if (id && lastFailedConversationId.current === id) {
+      setLoadingConversation(false);
+      return;
+    }
+
     // If no ID, reset to new chat state
     // BUT: Do not reset if we are in the process of creating a conversation
     // (this prevents clearing messages when conversationId is set before URL updates)
@@ -115,6 +170,7 @@ export function useConversation(modelState: [string, (v: string) => void]) {
       if (conversationId && !isCreatingConversation.current && !pendingConversationId.current) {
         resetLocal();
       }
+      lastFailedConversationId.current = null;
       setLoadingConversation(false);
       return;
     }
@@ -135,29 +191,72 @@ export function useConversation(modelState: [string, (v: string) => void]) {
 
     let cancelled = false;
 
+    const fetchFromLocal = async () => {
+      const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations/${id}`, {
+        method: 'GET',
+        credentials: apiCredentials,
+        headers: {
+          ...authHeaders,
+        } as HeadersInit,
+        cache: 'no-store',
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return extractConversation(data);
+    };
+
     (async () => {
       setLoadingConversation(true);
       try {
-        const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations/${id}`, {
-          method: 'GET',
-          credentials: APP_CONFIG.api.credentials,
-          cache: 'no-store',
-        });
+        let convo: any = null;
 
-        if (cancelled) return;
+        // Prefer local DB (Next API) first so data stays in sync
+        try {
+          convo = await fetchFromLocal();
+        } catch {
+          // ignore
+        }
 
-        if (!res.ok) {
-          console.error(`[useConversation] Failed to load conversation ${id}:`, res.status, res.statusText);
+        // If local did not return data, try external when configured
+        if (!convo && isExternalApi && authedClient) {
+          try {
+            const data = await authedClient.get(`/conversations/${id}`);
+            convo = extractConversation(data);
+          } catch (err: any) {
+            if (cancelled) return;
+            console.error(
+              `[useConversation] Failed to load conversation ${id}:`,
+              err?.message || err,
+            );
+          }
+        }
+
+        // As a last resort, try external in same-origin mode
+        if (!convo && authedClient && !isExternalApi) {
+          try {
+            const data = await authedClient.get(`/conversations/${id}`);
+            convo = extractConversation(data);
+          } catch (err: any) {
+            if (cancelled) return;
+            console.error(
+              `[useConversation] Failed to load conversation ${id}:`,
+              err?.message || err,
+            );
+          }
+        }
+
+        if (!convo) {
+          lastFailedConversationId.current = id;
+          setSidebarReloadKey((k) => k + APP_CONFIG.conversation.resetKeyIncrement);
+          clearConversationQuery(id);
           resetLocal();
           return;
         }
 
-        const data = await res.json();
-        const convo = data?.conversation;
-        
         if (cancelled) return;
         
         if (convo?.id) {
+          lastFailedConversationId.current = null;
           createdOnServer.current = true;
           setConversationId(convo.id);
           const loaded: UIMsg[] = Array.isArray(convo.messages) ? convo.messages : [];
@@ -197,14 +296,19 @@ export function useConversation(modelState: [string, (v: string) => void]) {
           });
         } else {
           console.warn(`[useConversation] Conversation ${id} has no data`);
+          lastFailedConversationId.current = id;
+          setSidebarReloadKey((k) => k + APP_CONFIG.conversation.resetKeyIncrement);
+          clearConversationQuery(id);
           resetLocal();
         }
       } catch (error) {
         if (cancelled) return;
         console.error(`[useConversation] Error loading conversation ${id}:`, error);
+        lastFailedConversationId.current = id;
+        setSidebarReloadKey((k) => k + APP_CONFIG.conversation.resetKeyIncrement);
+        clearConversationQuery(id);
         resetLocal();
-      }
-    finally {
+      } finally {
         if (!cancelled) setLoadingConversation(false);
       }
     })();
@@ -212,7 +316,7 @@ export function useConversation(modelState: [string, (v: string) => void]) {
     return () => {
       cancelled = true;
     };
-  }, [search, conversationId, resetLocal]);
+  }, [search, conversationId, resetLocal, authedClient, apiBase, apiCredentials, isExternalApi, clearConversationQuery, authHeaders]);
 
   /** Create conversation on server if missing */
   const ensureConversation = useCallback(async () => {
@@ -230,20 +334,35 @@ export function useConversation(modelState: [string, (v: string) => void]) {
         firstUser?.content?.slice(0, APP_CONFIG.conversation.maxTitleLength) ||
         UI_TEXT.app.newChatTitle;
 
-      const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations`, {
-        method: 'POST',
-        credentials: APP_CONFIG.api.credentials,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, model, messages: currentMsgs }),
-      });
-      if (!res.ok) {
-        isCreatingConversation.current = false;
-        pendingConversationId.current = null;
-        return;
+      let newId: string | undefined;
+
+      // Create via local API first (DB of record)
+      try {
+        const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations`, {
+          method: 'POST',
+          credentials: apiCredentials,
+          headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
+          body: JSON.stringify({ title, model, messages: currentMsgs }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          newId = data?.conversation?.id;
+        }
+      } catch {
+        // ignore, try external next
       }
 
-      const data = await res.json();
-      const newId: string | undefined = data?.conversation?.id;
+      // Fallback to external if local failed and external is available
+      if (!newId && authedClient) {
+        try {
+          const data = await authedClient.post(`/conversations`, { title, model, messages: currentMsgs });
+          const convo = extractConversation(data);
+          newId = convo?.id;
+        } catch {
+          // ignore
+        }
+      }
+
       if (newId) {
         createdOnServer.current = true;
         pendingConversationId.current = newId;
@@ -261,17 +380,45 @@ export function useConversation(modelState: [string, (v: string) => void]) {
           }, 500);
         }
       }
-    } catch (error) {
+    } catch (_error) {
       isCreatingConversation.current = false;
       pendingConversationId.current = null;
     }
-  }, [msgs, model, conversationId, router, search]);
+  }, [msgs, model, conversationId, router, search, authedClient, apiBase, apiCredentials, isExternalApi, authHeaders]);
+
+  const sendConversationPatch = useCallback(
+    async (cid: string, body: Record<string, any>, logCtx = '[appendMessages]') => {
+      // Try local DB first
+      try {
+        const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations/${cid}`, {
+          method: 'PATCH',
+          credentials: apiCredentials,
+          headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
+          body: JSON.stringify(body),
+        });
+        if (res.ok) return;
+        console.error(`${logCtx} Failed to save messages locally:`, res.status, res.statusText);
+      } catch (err) {
+        console.error(`${logCtx} Local save errored:`, err);
+      }
+
+      // Fallback to external if available
+      if (authedClient) {
+        try {
+          await authedClient.patch(`/conversations/${cid}`, body);
+          return;
+        } catch (err: any) {
+          console.error(`${logCtx} Failed to save messages via external API:`, err?.message || err);
+        }
+      }
+    },
+    [apiBase, apiCredentials, isExternalApi, authedClient, authHeaders],
+  );
 
   /** Append messages plus persist */
   const appendMessages = useCallback(
     async (...newMessages: UIMsg[]) => {
       let finalConversationId: string | null = null;
-      let messagesToSave: UIMsg[] = [];
       
       setMsgs((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
@@ -282,8 +429,6 @@ export function useConversation(modelState: [string, (v: string) => void]) {
           const updated = newMessages.find((nm) => nm.id === msg.id);
           return updated || msg;
         });
-        
-        messagesToSave = finalNext;
         
         const cid = conversationId || pendingConversationId.current;
         finalConversationId = cid;
@@ -302,20 +447,7 @@ export function useConversation(modelState: [string, (v: string) => void]) {
           // debounce saves to reduce flicker
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
-            fetch(`${APP_CONFIG.api.baseUrl}/conversations/${cid}`, {
-              method: 'PATCH',
-              credentials: APP_CONFIG.api.credentials,
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(updateBody),
-            })
-              .then((res) => {
-                if (!res.ok) {
-                  console.error('[appendMessages] Failed to save messages:', res.status, res.statusText);
-                }
-              })
-              .catch((err) => {
-                console.error('[appendMessages] Error saving messages:', err);
-              });
+            void sendConversationPatch(cid, updateBody, '[appendMessages]');
           }, 300);
         }
         return finalNext;
@@ -331,24 +463,12 @@ export function useConversation(modelState: [string, (v: string) => void]) {
               ? firstUserMsg.content.slice(0, APP_CONFIG.conversation.maxTitleLength).trim()
               : undefined;
             
-            try {
-              const updateBody: { messages: UIMsg[]; title?: string } = { messages: currentMsgs };
-              if (newTitle && (pendingConversationId.current === cid || isCreatingConversation.current)) {
-                updateBody.title = newTitle;
-              }
-              
-              const res = await fetch(`${APP_CONFIG.api.baseUrl}/conversations/${cid}`, {
-                method: 'PATCH',
-                credentials: APP_CONFIG.api.credentials,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(updateBody),
-              });
-              if (!res.ok) {
-                console.error('[appendMessages] Retry failed to save messages:', res.status);
-              }
-            } catch (err) {
-              console.error('[appendMessages] Retry error saving messages:', err);
+            const updateBody: { messages: UIMsg[]; title?: string } = { messages: currentMsgs };
+            if (newTitle && (pendingConversationId.current === cid || isCreatingConversation.current)) {
+              updateBody.title = newTitle;
             }
+
+            await sendConversationPatch(cid, updateBody, '[appendMessages]');
           }
         }, 200);
       }
@@ -356,23 +476,18 @@ export function useConversation(modelState: [string, (v: string) => void]) {
       isCreatingConversation.current = false;
       pendingConversationId.current = null;
     },
-    [conversationId],
+    [conversationId, sendConversationPatch],
   );
 
   /** Save current chat (explicit) */
   const saveCurrentChatIfNeeded = useCallback(async () => {
-    if (!conversationId) return;
-    try {
-      await fetch(`${APP_CONFIG.api.baseUrl}/conversations/${conversationId}`, {
-        method: 'PATCH',
-        credentials: APP_CONFIG.api.credentials,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: msgs }),
-      });
-    } catch (err) {
-      console.warn('[useConversation] saveCurrentChatIfNeeded failed:', err);
-    }
-  }, [conversationId, msgs]);
+      if (!conversationId) return;
+      try {
+        await sendConversationPatch(conversationId, { messages: msgs }, '[useConversation]');
+      } catch (_err) {
+        console.warn('[useConversation] saveCurrentChatIfNeeded failed:', _err);
+      }
+  }, [conversationId, msgs, sendConversationPatch]);
 
   /** Reset local chat */
   const resetToNewChat = useCallback(() => {
