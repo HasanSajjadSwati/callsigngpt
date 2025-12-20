@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import ModelPicker from '@/components/ModelPicker';
 import { useEffect, useState } from 'react';
-import { getApiBase } from '@/lib/apiBase';
+import { modelCache } from '@/lib/modelCache';
 
 type Props = {
   model?: string;
@@ -26,20 +26,17 @@ export default function TopBar({ model, setModel, showLogo = false, showStatusBa
 
   useEffect(() => {
     let cancelled = false;
-    const apiBase = getApiBase();
     (async () => {
       try {
-        if (!apiBase) throw new Error('API base URL not configured');
-        const resp = await fetch(`${apiBase}/models`);
-        if (!resp.ok) throw new Error(`models fetch failed ${resp.status}`);
-        const data = await resp.json();
+        const data = await modelCache.list();
         if (cancelled) return;
         const map: Record<string, ModelMeta> = {};
         for (const m of data || []) {
+          const parts = [m.provider, m.providerModel].filter(Boolean);
           map[m.modelKey] = {
             key: m.modelKey,
             label: m.displayName || m.modelKey,
-            description: `${m.provider} - ${m.providerModel}`,
+            description: parts.length ? parts.join(' - ') : undefined,
           };
         }
         setMeta(map);

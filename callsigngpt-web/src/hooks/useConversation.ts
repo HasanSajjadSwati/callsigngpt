@@ -90,6 +90,10 @@ export function useConversation(
 
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [sidebarReloadKey, setSidebarReloadKey] = useState(0);
+  const bumpSidebarReload = useCallback(
+    () => setSidebarReloadKey((k) => k + APP_CONFIG.conversation.resetKeyIncrement),
+    [setSidebarReloadKey],
+  );
   const createdOnServer = useRef(false);
   const isCreatingConversation = useRef(false);
   const pendingConversationId = useRef<string | null>(null); // Track conversation being created
@@ -109,6 +113,7 @@ export function useConversation(
   /** Shared local reset */
   const resetLocal = useCallback(() => {
     createdOnServer.current = false;
+    isCreatingConversation.current = false;
     setConversationId(null);
     pendingConversationId.current = null;
     setMsgs([greetingFnRef.current()]);
@@ -157,9 +162,12 @@ export function useConversation(
   // Load conversation when ?c changes
   useEffect(() => {
     const id = search.get('c');
-    if (id && lastFailedConversationId.current === id) {
-      setLoadingConversation(false);
-      return;
+
+    // If the user is switching to a different chat, clear any stale "creating" flags
+    // so selection is never blocked by a previous pending conversation state.
+    if (id && id !== conversationId && (isCreatingConversation.current || pendingConversationId.current)) {
+      isCreatingConversation.current = false;
+      pendingConversationId.current = null;
     }
 
     // If no ID, reset to new chat state
@@ -454,7 +462,7 @@ export function useConversation(
           // debounce saves to reduce flicker
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
-            void sendConversationPatch(cid, updateBody, '[appendMessages]');
+            void sendConversationPatch(cid, updateBody, '[appendMessages]').finally(bumpSidebarReload);
           }, 300);
         }
         return finalNext;
@@ -476,6 +484,7 @@ export function useConversation(
             }
 
             await sendConversationPatch(cid, updateBody, '[appendMessages]');
+            bumpSidebarReload();
           }
         }, 200);
       }
@@ -483,7 +492,7 @@ export function useConversation(
       isCreatingConversation.current = false;
       pendingConversationId.current = null;
     },
-    [conversationId, sendConversationPatch],
+    [conversationId, sendConversationPatch, bumpSidebarReload],
   );
 
   /** Save current chat (explicit) */

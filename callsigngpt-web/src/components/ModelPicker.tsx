@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties } from 'react';
-import { getApiBase } from '@/lib/apiBase';
+import { modelCache } from '@/lib/modelCache';
 
 export type ModelPickerProps = {
   value: string;
@@ -11,8 +11,8 @@ export type ModelPickerProps = {
 type ApiModel = {
   modelKey: string;
   displayName?: string | null;
-  provider: string;
-  providerModel: string;
+  provider?: string;
+  providerModel?: string;
 };
 
 type Option = {
@@ -26,19 +26,18 @@ export default function ModelPicker({ value, onChange }: ModelPickerProps) {
 
   useEffect(() => {
     let cancelled = false;
-    const apiBase = getApiBase();
     (async () => {
       try {
-        if (!apiBase) throw new Error('API base URL not configured');
-        const resp = await fetch(`${apiBase}/models`);
-        if (!resp.ok) throw new Error(`models fetch failed ${resp.status}`);
-        const data: ApiModel[] = await resp.json();
+        const data: ApiModel[] = await modelCache.list();
         if (cancelled) return;
-        const nextOptions = (data || []).map((m) => ({
-          key: m.modelKey,
-          label: m.displayName || m.modelKey,
-          description: `${m.provider} - ${m.providerModel}`,
-        }));
+        const nextOptions = (data || []).map((m) => {
+          const parts = [m.provider, m.providerModel].filter(Boolean);
+          return {
+            key: m.modelKey,
+            label: m.displayName || m.modelKey,
+            description: parts.length ? parts.join(' - ') : undefined,
+          };
+        });
         setOptions(nextOptions);
         if (nextOptions.length > 0 && !nextOptions.some((o) => o.key === value)) {
           onChange(nextOptions[0].key);

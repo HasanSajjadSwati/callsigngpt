@@ -1,6 +1,14 @@
 // app/layout.tsx
+import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/lib/auth';
+
+export const metadata: Metadata = {
+  icons: {
+    icon: '/callsign-logo.svg',
+    shortcut: '/callsign-logo.svg',
+  },
+};
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

@@ -20,13 +20,22 @@ import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useModelTheme } from '@/hooks/useModelTheme';
 import type { UIMsg } from '@/lib/chat';
 
-/** Ensure no duplicate message IDs before rendering */
+/** Ensure no duplicate message IDs before rendering (generate stable fallbacks if missing) */
 function sanitizeMsgs(arr: UIMsg[]): UIMsg[] {
-  const map = new Map<string, UIMsg>();
-  for (const m of arr) map.set(m.id || '', m);
-  return Array.from(map.entries())
-    .filter(([id]) => Boolean(id))
-    .map(([, m]) => m);
+  const seen = new Set<string>();
+  return arr
+    .map((m, idx) => {
+      const rawId = (m.id || '').toString().trim();
+      if (rawId) return m;
+      const fallbackId = `auto-${idx}-${m.role || 'msg'}-${(m.content || '').slice(0, 16)}`;
+      return { ...m, id: fallbackId };
+    })
+    .filter((m) => {
+      if (!m.id) return false;
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
 }
 
 /** Tiny helper to keep model default isolated */
@@ -265,14 +274,50 @@ function HomeInner() {
     };
   }, [conversationId, _setModel, authHeaders, conversationClient]);
 
-  // Auto-scroll on new messages
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
+  const [hasPendingScroll, setHasPendingScroll] = useState(false);
+
   useEffect(() => {
-    scrollerRef.current?.scrollTo({
-      top: scrollerRef.current.scrollHeight,
-      behavior: 'smooth',
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      const atBottom = distanceFromBottom <= 48;
+
+      if (atBottom) {
+        setAutoScrollEnabled(true);
+        setHasPendingScroll(false);
+      } else {
+        setAutoScrollEnabled(false);
+      }
+    };
+
+    handleScroll(); // initialize based on current position
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+
+    if (!autoScrollEnabled) {
+      setHasPendingScroll(true);
+      return;
+    }
+
+    // Use rAF so the DOM has painted before we measure/scroll
+    requestAnimationFrame(() => {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: 'smooth',
+      });
     });
-  }, [msgs, loading]);
+  }, [msgs, loading, autoScrollEnabled]);
 
   // Redirect to /login if not authenticated
   useEffect(() => {
@@ -291,10 +336,6 @@ function HomeInner() {
   };
 
   const handleSelectChat = (id: string) => {
-    if (conversationId === id) {
-      setSidebarOpen(false);
-      return;
-    }
     router.replace(`/?c=${id}`);
     setSidebarOpen(false);
   };
@@ -413,6 +454,31 @@ function HomeInner() {
                       <MessageBubble key={m.id} msg={m} />
                     ))}
                     {loading && <TypingIndicator />}
+                    <div
+                      className={[
+                        'sticky bottom-1 flex justify-end transition-opacity duration-300 ease-out',
+                        hasPendingScroll ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+                      ].join(' ')}
+                      style={{ paddingRight: 0, transform: 'translate(6px, 6px)' }}
+                    >
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/80 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_20px_60px_rgba(2,6,23,.6)] backdrop-blur transition hover:border-white/30 hover:bg-black/85"
+                        onClick={() => {
+                          setAutoScrollEnabled(true);
+                          setHasPendingScroll(false);
+                          scrollerRef.current?.scrollTo({
+                            top: scrollerRef.current.scrollHeight,
+                            behavior: 'smooth',
+                          });
+                        }}
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <path d="M12 5v14m0 0 5-5m-5 5-5-5" />
+                        </svg>
+                        Jump to latest
+                      </button>
+                    </div>
                   </div>
                 </div>
 

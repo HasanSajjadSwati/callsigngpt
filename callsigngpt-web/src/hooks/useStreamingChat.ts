@@ -64,6 +64,61 @@ const maybeDecodeText = (src: string) => {
   }
 };
 
+const MAX_HISTORY = 60;
+const MAX_CONTEXT_CHARS = 12_000;
+const MIN_RESPONSE_TOKENS = 120;
+const MAX_RESPONSE_TOKENS = 1_200;
+
+const estimateContentChars = (content: ChatMessage['content']) => {
+  if (Array.isArray(content)) {
+    return content.reduce((total, part) => {
+      if (part.type === 'text') return total + (part.text?.length ?? 0);
+      // Treat images as a fixed small cost so they don't evict all text context
+      const urlLen = part.image_url?.url?.length ?? 0;
+      return total + Math.min(urlLen || 0, 2_000);
+    }, 0);
+  }
+  return (content || '').length;
+};
+
+const trimByCharBudget = (messages: ChatMessage[], budget: number) => {
+  if (budget <= 0) return messages;
+  let remaining = budget;
+  const kept: ChatMessage[] = [];
+
+  // Walk from newest to oldest to keep recent context
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const msg = messages[i];
+    const cost = Math.max(estimateContentChars(msg.content), 0);
+    const mustKeep = kept.length === 0 || msg.role === 'system';
+    if (!mustKeep && remaining - cost < 0) continue;
+    kept.push(msg);
+    remaining -= cost;
+  }
+
+  const out = kept.reverse();
+
+  // Ensure we keep at least one system prompt if it exists
+  if (!out.some((m) => m.role === 'system')) {
+    const latestSystem = [...messages].reverse().find((m) => m.role === 'system');
+    if (latestSystem) out.unshift(latestSystem);
+  }
+
+  return out;
+};
+
+const pickMaxTokens = (messages: ChatMessage[]) => {
+  const promptTokens = messages.reduce(
+    (sum, msg) => sum + Math.ceil(estimateContentChars(msg.content) / 4),
+    0,
+  );
+  if (!promptTokens) return undefined;
+  return Math.max(
+    MIN_RESPONSE_TOKENS,
+    Math.min(MAX_RESPONSE_TOKENS, Math.floor(promptTokens * 0.6)),
+  );
+};
+
 const buildMessageContent = (message: UIMsg): ChatMessage['content'] => {
   const trimmed = message.content?.trim();
 
@@ -229,10 +284,9 @@ export function useStreamingChat({
           return history;
         })();
 
-        const MAX_HISTORY = 60;
         const historyWindow = baseHistory.length > MAX_HISTORY ? baseHistory.slice(-MAX_HISTORY) : baseHistory;
 
-        const fullHistory: ChatMessage[] = [...historyWindow, userMsg]
+        const normalizedHistory: ChatMessage[] = [...historyWindow, userMsg]
           .map((msg) => {
             const content = buildMessageContent(msg);
             if (Array.isArray(content) && !content.length) return null;
@@ -241,11 +295,15 @@ export function useStreamingChat({
           })
           .filter((entry): entry is ChatMessage => Boolean(entry));
 
+        const boundedHistory = trimByCharBudget(normalizedHistory, MAX_CONTEXT_CHARS);
+        const responseMaxTokens = pickMaxTokens(boundedHistory);
+
         const payload = {
           model: modelRef.current,
           conversationId: conversationId ?? undefined,
-          messages: fullHistory,
+          messages: boundedHistory,
           temperature: 0.7,
+          ...(responseMaxTokens ? { max_tokens: responseMaxTokens } : {}),
         };
 
         let finalAssistantText = '';
