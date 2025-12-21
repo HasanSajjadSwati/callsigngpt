@@ -66,7 +66,6 @@ const maybeDecodeText = (src: string) => {
 
 const MAX_HISTORY = 60;
 const MAX_CONTEXT_CHARS = 12_000;
-const MIN_RESPONSE_TOKENS = 120;
 const MAX_RESPONSE_TOKENS = 20_000;
 
 const estimateContentChars = (content: ChatMessage['content']) => {
@@ -113,10 +112,16 @@ const pickMaxTokens = (messages: ChatMessage[]) => {
     0,
   );
   if (!promptTokens) return undefined;
-  return Math.max(
-    MIN_RESPONSE_TOKENS,
-    Math.min(MAX_RESPONSE_TOKENS, Math.floor(promptTokens * 0.6)),
-  );
+
+  // If we're nowhere near our trimmed prompt budget, let the backend/model defaults decide
+  // how long to respond; explicitly capping here was cutting replies mid-sentence.
+  const approxPromptChars = promptTokens * 4;
+  if (approxPromptChars < MAX_CONTEXT_CHARS * 0.9) {
+    return undefined;
+  }
+
+  // When the prompt is already huge, keep a ceiling so we don't exceed provider limits.
+  return Math.min(MAX_RESPONSE_TOKENS, Math.floor(promptTokens * 0.5));
 };
 
 const buildMessageContent = (message: UIMsg): ChatMessage['content'] => {
