@@ -18,14 +18,14 @@ import StatusDialog from '@/components/StatusDialog';
 import { useConversation } from '@/hooks/useConversation';
 import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useModelTheme } from '@/hooks/useModelTheme';
-import { withTimestamps, type UIMsg } from '@/lib/chat';
+import type { UIMsg } from '@/lib/chat';
 
 const DEFAULT_MODEL_KEY = 'basic:gpt-4o-mini';
 
 /** Ensure no duplicate message IDs before rendering (generate stable fallbacks if missing) */
 function sanitizeMsgs(arr: UIMsg[]): UIMsg[] {
   const seen = new Set<string>();
-  const withIds = arr
+  return arr
     .map((m, idx) => {
       const rawId = (m.id || '').toString().trim();
       if (rawId) return m;
@@ -38,8 +38,6 @@ function sanitizeMsgs(arr: UIMsg[]): UIMsg[] {
       seen.add(m.id);
       return true;
     });
-
-  return withTimestamps(withIds);
 }
 
 /** Tiny helper to keep model default isolated */
