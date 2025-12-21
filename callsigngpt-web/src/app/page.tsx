@@ -20,6 +20,8 @@ import { useStreamingChat } from '@/hooks/useStreamingChat';
 import { useModelTheme } from '@/hooks/useModelTheme';
 import type { UIMsg } from '@/lib/chat';
 
+const DEFAULT_MODEL_KEY = 'basic:gpt-4o-mini';
+
 /** Ensure no duplicate message IDs before rendering (generate stable fallbacks if missing) */
 function sanitizeMsgs(arr: UIMsg[]): UIMsg[] {
   const seen = new Set<string>();
@@ -116,7 +118,7 @@ function HomeInner() {
   });
 
   // Model selection state
-  const modelState = useStateWithDefault('');
+  const modelState = useStateWithDefault(DEFAULT_MODEL_KEY);
   const [model, _setModel] = modelState;
   useModelTheme(model);
 

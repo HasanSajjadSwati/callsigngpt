@@ -279,6 +279,18 @@ export class LlmService {
       );
     }
 
+    const flattenContent = (content: any): string => {
+      if (typeof content === 'string') return content;
+      if (Array.isArray(content)) {
+        return content
+          .map((c) => (typeof c?.text === 'string' ? c.text : ''))
+          .filter(Boolean)
+          .join('');
+      }
+      if (typeof content?.text === 'string') return content.text;
+      return '';
+    };
+
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -301,8 +313,13 @@ export class LlmService {
 
         try {
           const obj = JSON.parse(line);
-          const piece = obj?.choices?.[0]?.delta?.content;
-          if (typeof piece === 'string' && piece.length > 0) yield piece;
+          const delta = obj?.choices?.[0]?.delta;
+          const message = obj?.choices?.[0]?.message;
+          const piece =
+            flattenContent(delta?.content) ||
+            flattenContent(delta?.text) ||
+            flattenContent(message?.content);
+          if (piece && piece.length > 0) yield piece;
         } catch {
           // ignore
         }
