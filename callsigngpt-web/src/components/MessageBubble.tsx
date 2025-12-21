@@ -47,6 +47,20 @@ export default function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === 'user';
   const isSystem = msg.role === 'system';
   const segments = useMemo(() => parseSegments(msg.content), [msg.content]);
+  const timestampLabel = useMemo(() => {
+    const raw = typeof msg.createdAt === 'string' ? Date.parse(msg.createdAt) : msg.createdAt;
+    if (typeof raw !== 'number' || Number.isNaN(raw)) return null;
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        month: 'short',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(raw));
+    } catch {
+      return null;
+    }
+  }, [msg.createdAt]);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
 
   const baseStyle = useMemo<CSSProperties>(
@@ -194,6 +208,28 @@ export default function MessageBubble({ msg }: { msg: Message }) {
             </div>
           )}
         </div>
+
+        {timestampLabel && (
+          <div
+            className={`mt-2 flex text-[12px] text-white/70 ${
+              isUser ? 'justify-end' : 'justify-start'
+            }`}
+          >
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-black/40 px-2.5 py-1 shadow-[0_12px_30px_rgba(2,6,23,.55)] backdrop-blur-sm">
+              <svg
+                viewBox="0 0 24 24"
+                className="h-4 w-4 text-white/80"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5.2l3 1.8" />
+              </svg>
+              <span className="font-semibold tracking-tight">{timestampLabel}</span>
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { UI_TEXT, APP_CONFIG, getSystemGreeting } from '@/config/uiText';
-import { UIMsg } from '@/lib/chat';
+import { UIMsg, withTimestamps } from '@/lib/chat';
 import { getApiBase } from '@/lib/apiBase';
 import { HttpClient } from '@/lib/httpClient';
 import { modelCache } from '@/lib/modelCache';
@@ -17,6 +17,7 @@ function buildSystemMessage(modelKey: string, labels: Record<string, string>): U
     id: genId(),
     role: (APP_CONFIG.conversation.greetingRole ?? 'assistant') as Role,
     content: getSystemGreeting(label),
+    createdAt: Date.now(),
   };
 }
 
@@ -78,7 +79,7 @@ export function useConversation(
     greetingFnRef.current = () => buildSystemMessage(modelRef.current, modelLabelsRef.current);
   }, [modelLabels]);
 
-  const [msgs, setMsgs] = useState<UIMsg[]>(() => [greetingFnRef.current()]);
+  const [msgs, setMsgs] = useState<UIMsg[]>(() => withTimestamps([greetingFnRef.current()]));
   const msgsRef = useRef<UIMsg[]>(msgs); // Keep ref to latest messages
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [loadingConversation, setLoadingConversation] = useState(false);
@@ -116,7 +117,7 @@ export function useConversation(
     isCreatingConversation.current = false;
     setConversationId(null);
     pendingConversationId.current = null;
-    setMsgs([greetingFnRef.current()]);
+    setMsgs(withTimestamps([greetingFnRef.current()]));
   }, []);
 
   // Fetch model labels so the greeting can use display names
@@ -265,7 +266,9 @@ export function useConversation(
           lastFailedConversationId.current = null;
           createdOnServer.current = true;
           setConversationId(convo.id);
-          const loaded: UIMsg[] = Array.isArray(convo.messages) ? convo.messages : [];
+          const loaded: UIMsg[] = Array.isArray(convo.messages)
+            ? withTimestamps(convo.messages)
+            : [];
 
           setMsgs((prev) => {
             const hasLocalContent = prev.some((m) => m.role === 'user' || m.role === 'assistant');
@@ -273,7 +276,7 @@ export function useConversation(
             if (conversationId && conversationId !== id) {
               return loaded.length
                 ? loaded
-                : [greetingFnRef.current()];
+                : withTimestamps([greetingFnRef.current()]);
             }
 
             // If staying on same conversation and we already have meaningful local state, keep it to avoid flicker
@@ -298,7 +301,7 @@ export function useConversation(
             // Otherwise, use the loaded messages
             return loaded.length
               ? loaded
-              : [greetingFnRef.current()];
+              : withTimestamps([greetingFnRef.current()]);
           });
         } else {
           console.warn(`[useConversation] Conversation ${id} has no data`);
@@ -444,17 +447,18 @@ export function useConversation(
           const updated = newMessages.find((nm) => nm.id === msg.id);
           return updated || msg;
         });
+        const timestampedNext = withTimestamps(finalNext);
         
         const cid = conversationId || pendingConversationId.current;
         finalConversationId = cid;
         
         if (cid) {
-          const firstUserMsg = finalNext.find((m) => m.role === 'user');
+          const firstUserMsg = timestampedNext.find((m) => m.role === 'user');
           const newTitle = firstUserMsg
             ? firstUserMsg.content.slice(0, APP_CONFIG.conversation.maxTitleLength).trim()
             : undefined;
           
-          const updateBody: { messages: UIMsg[]; title?: string } = { messages: finalNext };
+          const updateBody: { messages: UIMsg[]; title?: string } = { messages: timestampedNext };
           if (newTitle && (pendingConversationId.current === cid || isCreatingConversation.current)) {
             updateBody.title = newTitle;
           }
@@ -465,14 +469,14 @@ export function useConversation(
             void sendConversationPatch(cid, updateBody, '[appendMessages]').finally(bumpSidebarReload);
           }, 300);
         }
-        return finalNext;
+        return timestampedNext;
       });
       
       if (!finalConversationId && pendingConversationId.current) {
         setTimeout(async () => {
           const cid = conversationId || pendingConversationId.current;
           if (cid) {
-            const currentMsgs = msgsRef.current;
+            const currentMsgs = withTimestamps(msgsRef.current);
             const firstUserMsg = currentMsgs.find((m) => m.role === 'user');
             const newTitle = firstUserMsg
               ? firstUserMsg.content.slice(0, APP_CONFIG.conversation.maxTitleLength).trim()

@@ -303,13 +303,16 @@ export function useStreamingChat({
       if (!userText && !attachment) return;
       if (loading) return;
 
+      const now = Date.now();
+
       const userMsg: UIMsg = {
         id: genId(),
         role: 'user',
         content: userText,
         attachment,
+        createdAt: now,
       };
-      const assistantMsg: UIMsg = { id: genId(), role: 'assistant', content: '' };
+      const assistantMsg: UIMsg = { id: genId(), role: 'assistant', content: '', createdAt: now };
       const useTypewriter = /nano/i.test(modelRef.current);
 
       setMsgs((prev) => {
