@@ -278,24 +278,22 @@ function HomeInner() {
   }, [conversationId, _setModel, authHeaders, conversationClient]);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const [hasPendingScroll, setHasPendingScroll] = useState(false);
+
+  const computeIsAtBottom = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return true;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    return distanceFromBottom <= 48;
+  }, []);
 
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
 
     const handleScroll = () => {
-      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      const atBottom = distanceFromBottom <= 48;
-
-      if (atBottom) {
-        setAutoScrollEnabled(true);
-        setHasPendingScroll(false);
-      } else {
-        setAutoScrollEnabled(false);
-        setHasPendingScroll(true);
-      }
+      const atBottom = computeIsAtBottom();
+      setHasPendingScroll(!atBottom);
     };
 
     handleScroll(); // initialize based on current position
@@ -303,16 +301,20 @@ function HomeInner() {
     return () => {
       el.removeEventListener('scroll', handleScroll);
     };
-  }, []);
+  }, [computeIsAtBottom]);
 
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
 
-    if (!autoScrollEnabled) {
+    const atBottom = computeIsAtBottom();
+
+    if (!atBottom) {
       setHasPendingScroll(true);
       return;
     }
+
+    setHasPendingScroll(false);
 
     // Use rAF so the DOM has painted before we measure/scroll
     requestAnimationFrame(() => {
@@ -321,12 +323,11 @@ function HomeInner() {
         behavior: 'smooth',
       });
     });
-  }, [msgs, loading, autoScrollEnabled]);
+  }, [msgs, loading, computeIsAtBottom]);
 
   // Reset scroll state when switching chats or accounts to keep Jump to Present consistent everywhere
   useEffect(() => {
     const el = scrollerRef.current;
-    setAutoScrollEnabled(true);
     setHasPendingScroll(false);
     if (!el) return;
 
@@ -485,7 +486,6 @@ function HomeInner() {
                         type="button"
                         className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/80 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_20px_60px_rgba(2,6,23,.6)] backdrop-blur transition hover:border-white/30 hover:bg-black/85"
                         onClick={() => {
-                          setAutoScrollEnabled(true);
                           setHasPendingScroll(false);
                           scrollerRef.current?.scrollTo({
                             top: scrollerRef.current.scrollHeight,
@@ -503,7 +503,7 @@ function HomeInner() {
                 </div>
 
                 <div className="border-t border-white/5 px-2 py-3 sm:px-4 sm:py-4 space-y-3">
-                  {!loading && hasAssistantReply && (
+                  {!loading && interrupted && hasAssistantReply && (
                     <div className="flex justify-end">
                       <button
                         type="button"
