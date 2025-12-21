@@ -503,7 +503,7 @@ function HomeInner() {
                 </div>
 
                 <div className="border-t border-white/5 px-2 py-3 sm:px-4 sm:py-4 space-y-3">
-                  {!loading && interrupted && hasAssistantReply && (
+                  {!loading && hasAssistantReply && (
                     <div className="flex justify-end">
                       <button
                         type="button"
