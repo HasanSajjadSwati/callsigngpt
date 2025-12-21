@@ -85,10 +85,12 @@ export async function* streamChat({
     const text = await safeReadText(res);
     try {
       const json = JSON.parse(text);
+      if (json?.error) throw new Error(json.error?.message || json.error);
       const out = json?.text ?? json?.data ?? (typeof json === 'string' ? json : JSON.stringify(json));
       if (out) yield String(out);
-    } catch {
-      if (text) yield text;
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      if (text) throw new Error(String(err || text));
     }
     return;
   }
@@ -104,10 +106,12 @@ export async function* streamChat({
     const text = await safeReadText(res);
     try {
       const json = JSON.parse(text);
+      if (json?.error) throw new Error(json.error?.message || json.error);
       const out = json?.text ?? json?.data ?? (typeof json === 'string' ? json : JSON.stringify(json));
       if (out) yield String(out);
-    } catch {
-      if (text) yield text;
+    } catch (err) {
+      if (err instanceof Error) throw err;
+      if (text) throw new Error(String(err || text));
     }
     return;
   }
@@ -138,6 +142,7 @@ export async function* streamChat({
 
           try {
             const obj = JSON.parse(payloadStr);
+            if (obj?.error) throw new Error(obj.error?.message || obj.error);
             // OpenAI-style deltas, generic text, etc.
             const text =
               obj?.choices?.[0]?.delta?.content ??
@@ -146,9 +151,10 @@ export async function* streamChat({
               obj?.content ??
               (typeof obj === 'string' ? obj : '');
             if (text) yield String(text);
-          } catch {
-            // not JSON; yield raw
-            yield payloadStr;
+          } catch (err) {
+            // not JSON or explicit error; surface error
+            if (err instanceof Error) throw err;
+            throw new Error(String(err));
           }
         }
       }
@@ -174,6 +180,7 @@ export async function* streamChat({
           if (!payloadStr || payloadStr === '[DONE]') continue;
           try {
             const obj = JSON.parse(payloadStr);
+            if (obj?.error) throw new Error(obj.error?.message || obj.error);
             const text =
               obj?.choices?.[0]?.delta?.content ??
               obj?.text ??
@@ -181,8 +188,9 @@ export async function* streamChat({
               obj?.content ??
               (typeof obj === 'string' ? obj : '');
             if (text) yield String(text);
-          } catch {
-            yield payloadStr;
+          } catch (err) {
+            if (err instanceof Error) throw err;
+            throw new Error(payloadStr || String(err));
           }
         }
       }

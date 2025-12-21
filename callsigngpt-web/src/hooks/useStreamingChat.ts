@@ -67,7 +67,7 @@ const maybeDecodeText = (src: string) => {
 const MAX_HISTORY = 60;
 const MAX_CONTEXT_CHARS = 12_000;
 const MIN_RESPONSE_TOKENS = 120;
-const MAX_RESPONSE_TOKENS = 1_200;
+const MAX_RESPONSE_TOKENS = 20_000;
 
 const estimateContentChars = (content: ChatMessage['content']) => {
   if (Array.isArray(content)) {
@@ -168,12 +168,16 @@ export function useStreamingChat({
   onModelFallback,
 }: UseStreamingChatArgs) {
   const [loading, setLoading] = useState(false);
+  const [interrupted, setInterrupted] = useState(false);
   const ctrlRef = useRef<AbortController | null>(null);
 
   const msgsRef = useRef<UIMsg[]>(msgs);
   useEffect(() => {
     msgsRef.current = msgs;
   }, [msgs]);
+
+  const typingBufferRef = useRef<string>('');
+  const typingTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const modelRef = useRef<string>(model);
   modelRef.current = model;
@@ -212,6 +216,7 @@ export function useStreamingChat({
       // swallow
     }
     ctrlRef.current = null;
+    setInterrupted(true);
     setLoading(false);
   }, []);
 
@@ -223,6 +228,11 @@ export function useStreamingChat({
         // ignore
       }
       ctrlRef.current = null;
+      if (typingTimerRef.current) {
+        clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+      typingBufferRef.current = '';
     };
   }, []);
 
@@ -238,6 +248,55 @@ export function useStreamingChat({
     }
   }, [model]);
 
+  const startTypingFlush = useCallback(
+    (assistantId: string) => {
+      if (typingTimerRef.current) return;
+      typingTimerRef.current = setInterval(() => {
+        const buffer = typingBufferRef.current;
+        if (!buffer.length) {
+          clearInterval(typingTimerRef.current as NodeJS.Timeout);
+          typingTimerRef.current = null;
+          return;
+        }
+        const takeLen = Math.min(buffer.length, 12);
+        const take = buffer.slice(0, takeLen);
+        typingBufferRef.current = buffer.slice(takeLen);
+        setMsgs((prev) => {
+          if (!prev.length) return prev;
+          const out = prev.slice();
+          const last = out[out.length - 1];
+          if (last?.id === assistantId) {
+            out[out.length - 1] = { ...last, content: last.content + take };
+          }
+          return out;
+        });
+      }, 30);
+    },
+    [setMsgs],
+  );
+
+  const drainTypingBuffer = useCallback(
+    (assistantId: string) => {
+      const remaining = typingBufferRef.current;
+      typingBufferRef.current = '';
+      if (typingTimerRef.current) {
+        clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+      if (!remaining) return;
+      setMsgs((prev) => {
+        if (!prev.length) return prev;
+        const out = prev.slice();
+        const last = out[out.length - 1];
+        if (last?.id === assistantId) {
+          out[out.length - 1] = { ...last, content: last.content + remaining };
+        }
+        return out;
+      });
+    },
+    [setMsgs],
+  );
+
   const send = useCallback(
     async ({ text, attachment }: SendPayload) => {
       const userText = (text ?? '').trim();
@@ -251,6 +310,7 @@ export function useStreamingChat({
         attachment,
       };
       const assistantMsg: UIMsg = { id: genId(), role: 'assistant', content: '' };
+      const useTypewriter = /nano/i.test(modelRef.current);
 
       setMsgs((prev) => {
         const lastMsg = prev[prev.length - 1];
@@ -265,6 +325,7 @@ export function useStreamingChat({
       const controller = new AbortController();
       ctrlRef.current = controller;
       setLoading(true);
+      setInterrupted(false);
 
       try {
         const apiUrl = getApiBase();
@@ -323,17 +384,26 @@ export function useStreamingChat({
               fallbackNotified = true;
               onModelFallback?.('basic:gpt-4o-mini', 'quota-exceeded-gpt5');
             }
-            setMsgs((prev) => {
-              if (!prev.length) return prev;
-              const out = prev.slice();
-              const last = out[out.length - 1];
-              if (last?.id === assistantMsg.id) {
-                out[out.length - 1] = { ...last, content: last.content + chunk };
-              }
-              return out;
-            });
+            if (useTypewriter) {
+              typingBufferRef.current += chunk;
+              startTypingFlush(assistantMsg.id);
+            } else {
+              setMsgs((prev) => {
+                if (!prev.length) return prev;
+                const out = prev.slice();
+                const last = out[out.length - 1];
+                if (last?.id === assistantMsg.id) {
+                  out[out.length - 1] = { ...last, content: last.content + chunk };
+                }
+                return out;
+              });
+            }
             onSidebarDirty?.();
           }
+        }
+
+        if (useTypewriter) {
+          drainTypingBuffer(assistantMsg.id);
         }
 
         await appendMessages?.(
@@ -341,20 +411,13 @@ export function useStreamingChat({
           { ...assistantMsg, content: finalAssistantText },
         );
       } catch (err: any) {
+        if (/nano/i.test(modelRef.current)) {
+          drainTypingBuffer(assistantMsg.id);
+        }
         const msg = typeof err?.message === 'string' ? err.message : 'Request failed';
+        setInterrupted(true);
         onError?.(msg);
-        setMsgs((prev) => {
-          if (!prev.length) return prev;
-          const out = prev.slice();
-          const last = out[out.length - 1];
-          if (last?.id === assistantMsg.id) {
-            out[out.length - 1] = {
-              ...last,
-              content: last.content + `\n[error] ${msg}`,
-            };
-          }
-          return out;
-        });
+        // Keep chat clean: errors are surfaced via popup only.
       } finally {
         if (ctrlRef.current === controller) ctrlRef.current = null;
         setLoading(false);
@@ -373,5 +436,5 @@ export function useStreamingChat({
     ],
   );
 
-  return { send, stop, loading };
+  return { send, stop, loading, interrupted };
 }

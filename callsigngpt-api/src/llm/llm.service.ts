@@ -1,8 +1,10 @@
 import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
-import { ModelConfigService } from './model-config.service';
+import { ModelConfigService, type ModelConfig } from './model-config.service';
 import { SecretsService } from '../secrets/secrets.service';
 import { AppConfigService } from '../config/app-config.service';
 import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
+
+const DEFAULT_FALLBACK_MODEL = 'basic:gpt-4o-mini';
 
 type ChatContentPart =
   | { type: 'text'; text: string }
@@ -89,123 +91,183 @@ export class LlmService {
       /gpt-5/i.test(entry.providerModel) ? undefined : body.temperature ?? entry.temperatureDefault ?? 0.7;
     const maxTokensOverride = body.max_tokens ?? entry.maxTokensDefault ?? undefined;
 
-    switch (entry.provider) {
-      case 'openai': {
-        for await (const piece of this.streamOpenAI({
-          model: entry.providerModel,
-          messages: normalized,
-          temperature: temperatureOverride ?? 1,
-          max_tokens: maxTokensOverride,
-        }))
-          yield piece;
-        return;
+    const tried = new Set<string>();
+    for await (const piece of this.streamWithEntry({
+      entry,
+      normalized,
+      temperature: temperatureOverride,
+      maxTokens: maxTokensOverride,
+      tried,
+    })) {
+      yield piece;
+    }
+  }
+
+  private async *streamWithEntry(params: {
+    entry: ModelConfig;
+    normalized: ChatMessage[];
+    temperature?: number;
+    maxTokens?: number;
+    tried: Set<string>;
+  }): AsyncGenerator<string, void, unknown> {
+    const { entry, normalized, temperature, maxTokens, tried } = params;
+    if (tried.has(entry.modelKey)) {
+      throw new InternalServerErrorException(`Fallback loop detected for model ${entry.modelKey}`);
+    }
+    tried.add(entry.modelKey);
+
+    const fallbackKeyRaw = entry.fallbackModel || DEFAULT_FALLBACK_MODEL || null;
+    const fallbackKey =
+      fallbackKeyRaw && fallbackKeyRaw !== entry.modelKey ? fallbackKeyRaw : null;
+
+    try {
+      switch (entry.provider) {
+        case 'openai': {
+          for await (const piece of this.streamOpenAI({
+            model: entry.providerModel,
+            messages: normalized,
+            temperature: temperature ?? 1,
+            max_tokens: maxTokens,
+          }))
+            yield piece;
+          return;
+        }
+
+        case 'google': {
+          for await (const piece of this.streamGoogleGemini({
+            model: entry.providerModel,
+            messages: normalized.map((msg) => ({
+              ...msg,
+              // Gemini doesn't take OpenAI-style image_url; flatten to text notice
+              content: Array.isArray(msg.content)
+                ? msg.content
+                    .map((part) =>
+                      part.type === 'text' ? part.text : '[image attached]'
+                    )
+                    .join('\n\n')
+                : msg.content,
+            })),
+            temperature: temperature ?? 0.7,
+            max_tokens: maxTokens,
+          }))
+            yield piece;
+          return;
+        }
+
+        case 'anthropic': {
+          for await (const piece of this.streamAnthropic({
+            model: entry.providerModel,
+            messages: normalized.map((msg) => ({
+              ...msg,
+              content: Array.isArray(msg.content)
+                ? msg.content
+                    .map((part) =>
+                      part.type === 'text' ? part.text : '[image attached]'
+                    )
+                    .join('\n\n')
+                : msg.content,
+            })),
+            temperature: temperature ?? 0.7,
+            max_tokens: maxTokens ?? 1024,
+          }))
+            yield piece;
+          return;
+        }
+
+        case 'mistral': {
+          for await (const piece of this.streamMistral({
+            model: entry.providerModel,
+            messages: normalized.map((msg) => ({
+              ...msg,
+              content: Array.isArray(msg.content)
+                ? msg.content
+                    .map((part) =>
+                      part.type === 'text' ? part.text : '[image attached]'
+                    )
+                    .join('\n\n')
+                : msg.content,
+            })),
+            temperature: temperature ?? 0.7,
+            max_tokens: maxTokens,
+          }))
+            yield piece;
+          return;
+        }
+
+        case 'deepseek': {
+          for await (const piece of this.streamDeepSeek({
+            model: entry.providerModel,
+            messages: normalized.map((msg) => ({
+              ...msg,
+              content: Array.isArray(msg.content)
+                ? msg.content
+                    .map((part) =>
+                      part.type === 'text' ? part.text : '[image attached]'
+                    )
+                    .join('\n\n')
+                : msg.content,
+            })),
+            temperature: temperature ?? 0.7,
+            max_tokens: maxTokens,
+          }))
+            yield piece;
+          return;
+        }
+
+        case 'together': {
+          for await (const piece of this.streamTogether({
+            model: entry.providerModel,
+            messages: normalized.map((msg) => ({
+              ...msg,
+              content: Array.isArray(msg.content)
+                ? msg.content
+                    .map((part) =>
+                      part.type === 'text' ? part.text : '[image attached]'
+                    )
+                    .join('\n\n')
+                : msg.content,
+            })),
+            temperature: temperature ?? 0.7,
+            max_tokens: maxTokens,
+          }))
+            yield piece;
+          return;
+        }
+
+        default: {
+          yield `[router] Unsupported provider: ${(entry as any).provider}`;
+          return;
+        }
+      }
+    } catch (err: any) {
+      const msg = err?.message || '';
+      const noContent = /no content/i.test(msg);
+      const unsupportedParam = /unsupported parameter|not supported/i.test(msg);
+      const upstreamError = /openai error|bad request|400|422/i.test(msg);
+      const timedOut = /timed out/i.test(msg);
+      const canFallback = fallbackKey && !tried.has(fallbackKey);
+      const shouldFallback = canFallback && (noContent || unsupportedParam || upstreamError || timedOut);
+      if (!shouldFallback) throw err;
+
+      let fallbackEntry: ModelConfig | null = null;
+      try {
+        fallbackEntry = await this.modelConfig.getModel(fallbackKey);
+      } catch {
+        fallbackEntry = null;
       }
 
-      case 'google': {
-        for await (const piece of this.streamGoogleGemini({
-          model: entry.providerModel,
-          messages: normalized.map((msg) => ({
-            ...msg,
-            // Gemini doesn't take OpenAI-style image_url; flatten to text notice
-            content: Array.isArray(msg.content)
-              ? msg.content
-                  .map((part) =>
-                    part.type === 'text' ? part.text : '[image attached]'
-                  )
-                  .join('\n\n')
-              : msg.content,
-          })),
-          temperature: temperatureOverride ?? 0.7,
-          max_tokens: maxTokensOverride,
-        }))
-          yield piece;
-        return;
-      }
+      if (!fallbackEntry) throw err;
 
-      case 'anthropic': {
-        for await (const piece of this.streamAnthropic({
-          model: entry.providerModel,
-          messages: normalized.map((msg) => ({
-            ...msg,
-            content: Array.isArray(msg.content)
-              ? msg.content
-                  .map((part) =>
-                    part.type === 'text' ? part.text : '[image attached]'
-                  )
-                  .join('\n\n')
-              : msg.content,
-          })),
-          temperature: temperatureOverride ?? 0.7,
-          max_tokens: maxTokensOverride ?? 1024,
-        }))
-          yield piece;
-        return;
+      for await (const piece of this.streamWithEntry({
+        entry: fallbackEntry,
+        normalized,
+        temperature,
+        maxTokens,
+        tried,
+      })) {
+        yield piece;
       }
-
-      case 'mistral': {
-        for await (const piece of this.streamMistral({
-          model: entry.providerModel,
-          messages: normalized.map((msg) => ({
-            ...msg,
-            content: Array.isArray(msg.content)
-              ? msg.content
-                  .map((part) =>
-                    part.type === 'text' ? part.text : '[image attached]'
-                  )
-                  .join('\n\n')
-              : msg.content,
-          })),
-          temperature: temperatureOverride ?? 0.7,
-          max_tokens: maxTokensOverride,
-        }))
-          yield piece;
-        return;
-      }
-
-      case 'deepseek': {
-        for await (const piece of this.streamDeepSeek({
-          model: entry.providerModel,
-          messages: normalized.map((msg) => ({
-            ...msg,
-            content: Array.isArray(msg.content)
-              ? msg.content
-                  .map((part) =>
-                    part.type === 'text' ? part.text : '[image attached]'
-                  )
-                  .join('\n\n')
-              : msg.content,
-          })),
-          temperature: temperatureOverride ?? 0.7,
-          max_tokens: maxTokensOverride,
-        }))
-          yield piece;
-        return;
-      }
-
-      case 'together': {
-        for await (const piece of this.streamTogether({
-          model: entry.providerModel,
-          messages: normalized.map((msg) => ({
-            ...msg,
-            content: Array.isArray(msg.content)
-              ? msg.content
-                  .map((part) =>
-                    part.type === 'text' ? part.text : '[image attached]'
-                  )
-                  .join('\n\n')
-              : msg.content,
-          })),
-          temperature: temperatureOverride ?? 0.7,
-          max_tokens: maxTokensOverride,
-        }))
-          yield piece;
-        return;
-      }
-
-      default: {
-        yield `[router] Unsupported provider: ${(entry as any).provider}`;
-        return;
-      }
+      return;
     }
   }
 
@@ -219,6 +281,9 @@ export class LlmService {
     max_tokens?: number;
   }) {
     const apiKey = await this.secrets.require('OPENAI_API_KEY');
+    const modelName = String(opts.model || '').toLowerCase();
+    const forbidsTemperature = /(?:^|-)o1|nano/.test(modelName);
+    const forbidsTokens = /nano/.test(modelName);
 
     // Truncate/guard image sizes to reduce request size
     // Allow large images; default ~50MB base64 unless overridden
@@ -254,10 +319,14 @@ export class LlmService {
       messages: normalizedMessages,
       stream: true,
     };
-    if (!hasImage) {
+    if (!hasImage && !forbidsTemperature && typeof opts.temperature === 'number') {
       payload.temperature = opts.temperature;
     }
-    if (opts.max_tokens) payload.max_tokens = opts.max_tokens;
+    if (!forbidsTokens && opts.max_tokens) {
+      // Newer OpenAI models (e.g., gpt-5 / gpt-4.1 / o1 variants) require max_completion_tokens
+      const useCompletionParam = /gpt-5|gpt-4\.1|(?:^|-)o1/i.test(opts.model);
+      payload[useCompletionParam ? 'max_completion_tokens' : 'max_tokens'] = opts.max_tokens;
+    }
 
     const resp = await this.fetchWithUpstreamTimeout(
       'OpenAI',
@@ -280,20 +349,31 @@ export class LlmService {
     }
 
     const flattenContent = (content: any): string => {
+      if (!content) return '';
       if (typeof content === 'string') return content;
       if (Array.isArray(content)) {
         return content
-          .map((c) => (typeof c?.text === 'string' ? c.text : ''))
-          .filter(Boolean)
+          .map((c) => flattenContent(c))
+          .filter((s) => typeof s === 'string' && s.length > 0)
           .join('');
       }
-      if (typeof content?.text === 'string') return content.text;
+      if (typeof content === 'object') {
+        // Handle OpenAI content blocks (text + reasoning), plus any nested text/value
+        return (
+          flattenContent((content as any).text) ||
+          flattenContent((content as any).value) ||
+          flattenContent((content as any).content) ||
+          ''
+        );
+      }
       return '';
     };
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    let yielded = false;
+    let sawDone = false;
 
     while (true) {
       const { value, done } = await reader.read();
@@ -302,28 +382,69 @@ export class LlmService {
 
       let idx: number;
       while ((idx = buffer.indexOf('\n\n')) !== -1) {
-        const raw = buffer.slice(0, idx).trim();
+        const raw = buffer.slice(0, idx);
         buffer = buffer.slice(idx + 2);
-        const line = raw.startsWith('data:') ? raw.slice(5).trim() : raw;
 
-        if (!line || line === '[DONE]') {
-          if (line === '[DONE]') return;
-          continue;
-        }
+        const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        for (const l of lines) {
+          const line = l.startsWith('data:') ? l.slice(5).trim() : l;
 
-        try {
-          const obj = JSON.parse(line);
-          const delta = obj?.choices?.[0]?.delta;
-          const message = obj?.choices?.[0]?.message;
-          const piece =
-            flattenContent(delta?.content) ||
-            flattenContent(delta?.text) ||
-            flattenContent(message?.content);
-          if (piece && piece.length > 0) yield piece;
-        } catch {
-          // ignore
+          if (!line || line === '[DONE]') {
+            if (line === '[DONE]') sawDone = true;
+            continue;
+          }
+
+          try {
+            const obj = JSON.parse(line);
+            const delta = obj?.choices?.[0]?.delta;
+            const message = obj?.choices?.[0]?.message;
+            const piece =
+              flattenContent(delta?.content) ||
+              flattenContent(delta?.reasoning_content) ||
+              flattenContent(delta?.text) ||
+              flattenContent(message?.content) ||
+              flattenContent(obj?.content) ||
+              flattenContent(obj?.text);
+            if (piece && piece.length > 0) {
+              yielded = true;
+              yield piece;
+            }
+          } catch {
+            // ignore malformed fragments; continue
+          }
         }
       }
+
+      if (sawDone) break;
+    }
+
+    // Flush any trailing buffer that lacked the final double newline
+    const leftover = buffer.trim();
+    if (leftover) {
+      try {
+        const obj = JSON.parse(leftover);
+        const delta = obj?.choices?.[0]?.delta;
+        const message = obj?.choices?.[0]?.message;
+        const piece =
+          flattenContent(delta?.content) ||
+          flattenContent(delta?.reasoning_content) ||
+          flattenContent(delta?.text) ||
+          flattenContent(message?.content) ||
+          flattenContent(obj?.content) ||
+          flattenContent(obj?.text);
+        if (piece && piece.length > 0) {
+          yielded = true;
+          yield piece;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!yielded) {
+      throw new InternalServerErrorException(
+        `OpenAI stream returned no content for model ${opts.model}`,
+      );
     }
   }
 

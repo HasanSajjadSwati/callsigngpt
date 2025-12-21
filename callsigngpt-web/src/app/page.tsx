@@ -84,6 +84,7 @@ function normalizeErrorMessage(raw: string): string {
 function HomeInner() {
   const router = useRouter();
   const { session, accessToken, loading: authLoading } = useAuth();
+  const sessionKey = session?.user?.id || session?.user?.email || 'anonymous';
   const apiBase = getApiBase();
   const conversationApiBase = apiBase || APP_CONFIG.api.baseUrl;
   const conversationClient = useMemo(
@@ -206,7 +207,7 @@ function HomeInner() {
   }>({ open: false, title: '', message: '', variant: 'error' });
 
   // Streaming chat
-  const { send, stop, loading } = useStreamingChat({
+  const { send, stop, loading, interrupted } = useStreamingChat({
     accessToken,
     model,
     msgs,
@@ -217,7 +218,7 @@ function HomeInner() {
     onError: (message) =>
       setStatusDialog({
         open: true,
-        title: 'Limit reached',
+        title: /quota|limit/i.test(message || '') ? 'Limit reached' : 'Error',
         message: normalizeErrorMessage(message || ''),
         variant: 'error',
       }),
@@ -293,6 +294,7 @@ function HomeInner() {
         setHasPendingScroll(false);
       } else {
         setAutoScrollEnabled(false);
+        setHasPendingScroll(true);
       }
     };
 
@@ -321,6 +323,21 @@ function HomeInner() {
     });
   }, [msgs, loading, autoScrollEnabled]);
 
+  // Reset scroll state when switching chats or accounts to keep Jump to Present consistent everywhere
+  useEffect(() => {
+    const el = scrollerRef.current;
+    setAutoScrollEnabled(true);
+    setHasPendingScroll(false);
+    if (!el) return;
+
+    requestAnimationFrame(() => {
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: 'auto',
+      });
+    });
+  }, [conversationId, sessionKey]);
+
   // Redirect to /login if not authenticated
   useEffect(() => {
     if (!authLoading && !session) router.replace('/login');
@@ -330,6 +347,7 @@ function HomeInner() {
   if (!session) return null;
 
   const safeMsgs = sanitizeMsgs(msgs);
+  const hasAssistantReply = safeMsgs.some((m) => m.role === 'assistant' && (m.content || '').trim().length > 0);
 
   const handleNewChat = async () => {
     await saveCurrentChatIfNeeded();
@@ -478,13 +496,27 @@ function HomeInner() {
                         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                           <path d="M12 5v14m0 0 5-5m-5 5-5-5" />
                         </svg>
-                        Jump to latest
+                        Jump to present
                       </button>
                     </div>
                   </div>
                 </div>
 
-                <div className="border-t border-white/5 px-2 py-3 sm:px-4 sm:py-4">
+                <div className="border-t border-white/5 px-2 py-3 sm:px-4 sm:py-4 space-y-3">
+                  {!loading && interrupted && hasAssistantReply && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => send({ text: 'Continue' })}
+                        className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_12px_36px_rgba(2,6,23,.55)] transition hover:border-white/30 hover:bg-white/15"
+                      >
+                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                          <path d="M5 12h14m0 0-6-5m6 5-6 5" />
+                        </svg>
+                        Continue response
+                      </button>
+                    </div>
+                  )}
                   <Composer
                     disabled={loading}
                     showStop={loading}
