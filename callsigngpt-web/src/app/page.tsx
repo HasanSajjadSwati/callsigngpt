@@ -465,7 +465,8 @@ function HomeInner() {
                 )}
                 <div
                   ref={scrollerRef}
-                  className="scroll-area flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain px-3 py-5 sm:px-5 lg:px-8"
+                  className="scroll-area flex-1 min-h-0 overflow-y-auto overflow-x-auto sm:overflow-x-hidden overscroll-contain px-3 py-5 sm:px-5 lg:px-8"
+                  style={{ WebkitOverflowScrolling: 'touch' }}
                 >
                   <div className="flex w-full flex-col space-y-4 pb-24 sm:pb-28">
                     {safeMsgs.map((m) => (

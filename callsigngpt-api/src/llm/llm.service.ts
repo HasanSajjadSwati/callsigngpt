@@ -157,7 +157,7 @@ export class LlmService {
       role: 'system',
       content: [
         'Search policy:',
-        '- Web search runs by default for each user request when possible.',
+        '- Web search runs automatically for queries that are likely to need up-to-date information.',
         '- Use web search results when they are provided in the system context.',
         '- If asked whether you can browse or search the web, answer yes and say you will cite sources.',
         '- If no web results are provided for this response, answer from existing knowledge and say you could not retrieve live results.',
@@ -206,8 +206,48 @@ export class LlmService {
 
   private shouldUseSearch(text: string): boolean {
     const normalized = text.toLowerCase();
-    if (!normalized.length) return false;
-    return true;
+    const trimmed = normalized.trim();
+    if (trimmed.length < 6) return false;
+
+    const optOut =
+      /\b(no\s+search|don't\s+search|do\s+not\s+search|without\s+search|no\s+web|offline|from\s+memory)\b/;
+    if (optOut.test(trimmed)) return false;
+
+    const explicit =
+      /\b(search|google|browse|web|online|look\s*up|lookup|check\s+online)\b/;
+    if (explicit.test(trimmed)) return true;
+
+    const freshness =
+      /\b(latest|recent|today|now|current|currently|as of|up[- ]?to[- ]?date|this week|this month|this year|breaking|news|update|updated|newest|live|just announced|recently)\b/;
+    const dynamic =
+      /\b(price|stock|quote|exchange rate|rate|weather|forecast|score|standings|odds|availability|release date|launch|earnings|filing|results|schedule|timetable|tickets|traffic|outage|incident|status|downtime|service status|pricing|plans|plan|roadmap|changelog|version)\b/;
+    const timeRef =
+      /\b(20\d{2}|yesterday|tomorrow|last week|next week|last month|next month|last year|next year|q[1-4])\b/;
+    const verification =
+      /\b(confirm|verify|check|lookup|find|show|source|cite|link)\b/;
+
+    const summarize =
+      /\b(summarize|rewrite|paraphrase|translate|proofread|edit|grammar|fix typos)\b/;
+    const creative =
+      /\b(write|draft|story|poem|lyrics|roleplay|fiction|creative|dialogue)\b/;
+    const coding =
+      /```|`[^`]+`|\b(stack trace|exception|error|bug|compile|typescript|javascript|python|java|c\+\+|c#|rust|golang|node\.js)\b/;
+    const math =
+      /\b(derive|solve|integral|theorem|proof|equation|calculate|simplify)\b/;
+
+    let score = 0;
+    if (freshness.test(trimmed)) score += 3;
+    if (dynamic.test(trimmed)) score += 3;
+    if (timeRef.test(trimmed)) score += 2;
+    if (verification.test(trimmed)) score += 2;
+
+    let penalty = 0;
+    if (summarize.test(trimmed)) penalty += 2;
+    if (creative.test(trimmed)) penalty += 2;
+    if (coding.test(trimmed)) penalty += 2;
+    if (math.test(trimmed)) penalty += 2;
+
+    return score - penalty >= 2;
   }
 
   private formatSearchMessage(query: string, results: SearchResult[]): string {

@@ -171,7 +171,7 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
                 composer-input scroll-area
                 flex-1 min-h-[48px] max-h-[200px]
                 rounded-2xl bg-transparent text-white
-                px-3 py-3 leading-5 sm:leading-6 text-sm sm:text-base
+                px-3 py-3 leading-6 text-[16px] sm:text-base
                 outline-none resize-none
                 placeholder:text-zinc-500
                 overflow-x-hidden

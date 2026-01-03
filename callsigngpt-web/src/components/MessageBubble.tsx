@@ -47,6 +47,7 @@ export default function MessageBubble({ msg }: { msg: Message }) {
   const isUser = msg.role === 'user';
   const isSystem = msg.role === 'system';
   const segments = useMemo(() => parseSegments(msg.content), [msg.content]);
+  const hasCode = segments.some((segment) => segment.type === 'code');
   const timestampLabel = useMemo(() => {
     const raw = typeof msg.createdAt === 'string' ? Date.parse(msg.createdAt) : msg.createdAt;
     if (typeof raw !== 'number' || Number.isNaN(raw)) return null;
@@ -90,10 +91,14 @@ export default function MessageBubble({ msg }: { msg: Message }) {
   );
 
   const bubbleBase = [
-    'inline-block rounded-3xl px-5 py-4 text-[15px] leading-6 whitespace-pre-wrap break-words overflow-x-hidden',
+    'inline-block max-w-full rounded-3xl px-5 py-4 text-[15px] leading-6 whitespace-pre-wrap break-words',
     'border border-white/5 shadow-[0_15px_40px_rgba(2,6,23,.45)] transition-all duration-300',
     'hover:-translate-y-0.5 hover:shadow-[0_25px_70px_rgba(2,6,23,.55)]',
   ].join(' ');
+
+  const bubbleWrapper = hasCode
+    ? 'w-full min-w-0 max-w-[92%] lg:max-w-[110ch]'
+    : 'w-fit min-w-0 max-w-[92%] lg:max-w-[110ch]';
 
   const bubbleUser = 'border-transparent';
   const bubbleAsst = 'bg-white/10 text-zinc-100 backdrop-blur-sm';
@@ -111,11 +116,11 @@ export default function MessageBubble({ msg }: { msg: Message }) {
 
   return (
     <div className={`w-full flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className="w-fit" style={{ maxWidth: 'min(110ch, 92%)' }}>
+      <div className={bubbleWrapper}>
         <div
           className={`${bubbleBase} ${
             isSystem ? bubbleSystem : isUser ? bubbleUser : bubbleAsst
-          } ${isUser ? 'break-all' : ''}`}
+          } ${isUser ? 'break-all' : ''} ${hasCode ? 'w-full' : ''}`}
           // Hard guarantees for stubborn browsers / older Tailwind
           style={{
             ...baseStyle,
@@ -128,7 +133,7 @@ export default function MessageBubble({ msg }: { msg: Message }) {
               segment.type === 'code' ? (
                 <div
                   key={`code-${idx}`}
-                  className="relative overflow-hidden rounded-xl border border-white/15 bg-slate-950/80 text-slate-100"
+                  className="relative max-w-full rounded-xl border border-white/15 bg-slate-950/80 text-slate-100"
                 >
                   <div className="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-wide text-white/70">
                     <span className="font-semibold">{segment.lang || 'code'}</span>
@@ -140,7 +145,10 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                       {copiedIdx === idx ? 'Copied' : 'Copy'}
                     </button>
                   </div>
-                  <pre className="overflow-x-auto px-4 pb-4 text-[13px] leading-6">
+                  <pre
+                    className="scroll-area overflow-x-auto overscroll-x-contain px-4 pb-4 text-[13px] leading-6"
+                    style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
+                  >
                     <code className="whitespace-pre font-mono">{segment.value}</code>
                   </pre>
                 </div>
