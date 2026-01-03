@@ -26,6 +26,9 @@ export const envSchema = z.object({
   DEEPSEEK_API_KEY: z.string().optional(),
   TOGETHER_API_KEY: z.string().optional(),
 
+  GOOGLE_SEARCH_API_KEY: z.string().optional(),
+  GOOGLE_SEARCH_CX: z.string().optional(),
+
   UPSTASH_REDIS_REST_URL: z.string().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().optional(),
 });

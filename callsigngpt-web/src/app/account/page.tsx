@@ -32,6 +32,7 @@ export default function AccountPage() {
   const [phone, setPhone] = useState('');
   const [phoneError, setPhoneError] = useState<string | null>(null);
   const [plan, setPlan] = useState('free');
+  const [profileSnapshot, setProfileSnapshot] = useState({ name: '', phone: '' });
 
   // password state
   const [oldPassword, setOldPassword] = useState('');
@@ -46,6 +47,9 @@ export default function AccountPage() {
     message: string;
     variant: 'error' | 'success' | 'info';
   }>({ open: false, title: '', message: '', variant: 'info' });
+  const [closeConfirmOpen, setCloseConfirmOpen] = useState(false);
+  const [clearHistoryConfirmOpen, setClearHistoryConfirmOpen] = useState(false);
+  const [saveProfileConfirmOpen, setSaveProfileConfirmOpen] = useState(false);
 
   const showStatusDialog = (
     title: string,
@@ -63,6 +67,9 @@ export default function AccountPage() {
   const pillClass =
     'inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-xs font-medium tracking-wide uppercase text-zinc-300';
   const PHONE_LENGTH_ERROR = 'Phone number must be between 10 and 15 digits.';
+  const hasProfileChanges = name !== profileSnapshot.name || phone !== profileSnapshot.phone;
+  const hasPasswordChanges = Boolean(oldPassword || newPassword);
+  const hasUnsavedChanges = hasProfileChanges || hasPasswordChanges;
 
   // --- Fetcher --------------------------------------------------------------
   async function loadMe() {
@@ -82,12 +89,14 @@ export default function AccountPage() {
         return;
       }
 
+      const resolvedName = (data.name ?? (session?.user?.user_metadata?.name as string) ?? '') as string;
       setEmail(data.email ?? session?.user?.email ?? '');
-      setName((data.name ?? (session?.user?.user_metadata?.name as string) ?? '') as string);
+      setName(resolvedName);
       const normalizedPhone = normalizePhoneInput(
         (data.phone ?? (session?.user?.user_metadata?.phone as string) ?? '') as string
       );
       setPhone(normalizedPhone);
+      setProfileSnapshot({ name: resolvedName, phone: normalizedPhone });
       setPhoneError(isValidPhoneLength(normalizedPhone) ? null : PHONE_LENGTH_ERROR);
       setPlan((data.tier ?? data.plan ?? 'free') as string);
     } catch (e: any) {
@@ -106,16 +115,27 @@ export default function AccountPage() {
     }
     // prefill email from session immediately for nicer UX
     setEmail(session.user?.email ?? '');
-    setName((session.user?.user_metadata?.name as string) ?? '');
+    const sessionName = (session.user?.user_metadata?.name as string) ?? '';
+    setName(sessionName);
     const normalizedPhone = normalizePhoneInput((session.user?.user_metadata?.phone as string) ?? '');
     setPhone(normalizedPhone);
+    setProfileSnapshot({ name: sessionName, phone: normalizedPhone });
     setPhoneError(isValidPhoneLength(normalizedPhone) ? null : PHONE_LENGTH_ERROR);
     loadMe();
   }, [authLoading, session, accessToken]);
 
   // --- Actions --------------------------------------------------------------
-  async function saveProfile(e: React.FormEvent) {
+  function handleSaveProfileSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!isValidPhoneLength(phone)) {
+      setPhoneError(PHONE_LENGTH_ERROR);
+      showStatusDialog('Invalid phone number', PHONE_LENGTH_ERROR, 'error');
+      return;
+    }
+    setSaveProfileConfirmOpen(true);
+  }
+
+  async function saveProfile() {
     const client = new HttpClient({
       baseUrl: getApiBase(),
       headers: { Authorization: `Bearer ${accessToken}` },
@@ -181,6 +201,14 @@ export default function AccountPage() {
     }
   }
 
+  function handleCloseSettings() {
+    if (hasUnsavedChanges) {
+      setCloseConfirmOpen(true);
+      return;
+    }
+    router.push('/');
+  }
+
   async function handleSignOut() {
     await signOut();
     router.push('/login');
@@ -224,7 +252,7 @@ export default function AccountPage() {
         <div className="flex justify-end">
           <button
             aria-label="Close settings"
-            onClick={() => router.push('/')}
+            onClick={handleCloseSettings}
             className="rounded-full border border-white/10 bg-white/5 p-2 text-zinc-400 transition hover:border-white/30 hover:bg-white/10 hover:text-white"
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
@@ -277,7 +305,7 @@ export default function AccountPage() {
               <span className={pillClass}>Profile</span>
               <p className="text-sm text-zinc-400">Update your public-facing identity and contact details.</p>
             </div>
-            <form onSubmit={saveProfile} className="space-y-5">
+            <form onSubmit={handleSaveProfileSubmit} className="space-y-5">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Email</label>
                 <input className={`${inputClass} mt-2`} value={email} disabled />
@@ -403,7 +431,7 @@ export default function AccountPage() {
             </div>
             <div className="space-y-4">
               <button
-                onClick={clearHistory}
+                onClick={() => setClearHistoryConfirmOpen(true)}
                 disabled={clearingHistory}
                 className="w-full rounded-2xl border border-white/10 px-5 py-2.5 text-sm text-zinc-100 transition hover:border-rose-400/50 hover:text-white disabled:opacity-50"
               >
@@ -430,6 +458,44 @@ export default function AccountPage() {
           </section>
         </div>
       </div>
+      <ConfirmDialog
+        isOpen={closeConfirmOpen}
+        title="Discard changes?"
+        message="You have unsaved changes. Are you sure you want to close settings?"
+        confirmText="Discard changes"
+        cancelText="Stay"
+        variant="danger"
+        onConfirm={() => {
+          setCloseConfirmOpen(false);
+          router.push('/');
+        }}
+        onCancel={() => setCloseConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        isOpen={saveProfileConfirmOpen}
+        title="Save profile changes?"
+        message="Do you want to save these updates to your profile?"
+        confirmText="Save profile"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setSaveProfileConfirmOpen(false);
+          void saveProfile();
+        }}
+        onCancel={() => setSaveProfileConfirmOpen(false)}
+      />
+      <ConfirmDialog
+        isOpen={clearHistoryConfirmOpen}
+        title="Clear conversation history?"
+        message="This removes all of your chats and cannot be undone."
+        confirmText="Clear history"
+        cancelText="Cancel"
+        variant="danger"
+        onConfirm={() => {
+          setClearHistoryConfirmOpen(false);
+          void clearHistory();
+        }}
+        onCancel={() => setClearHistoryConfirmOpen(false)}
+      />
       <ConfirmDialog
         isOpen={deleteAccountOpen}
         title="Delete account"

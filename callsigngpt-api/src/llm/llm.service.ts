@@ -1,8 +1,9 @@
-import { BadRequestException, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ModelConfigService, type ModelConfig } from './model-config.service';
 import { SecretsService } from '../secrets/secrets.service';
 import { AppConfigService } from '../config/app-config.service';
 import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
+import { GoogleSearchService, type SearchResult } from '../search/google-search.service';
 
 const DEFAULT_FALLBACK_MODEL = 'basic:gpt-4o-mini';
 
@@ -47,10 +48,13 @@ type ChatBody = {
 
 @Injectable()
 export class LlmService {
+  private readonly logger = new Logger(LlmService.name);
+
   constructor(
     private readonly modelConfig: ModelConfigService,
     private readonly secrets: SecretsService,
     private readonly config: AppConfigService,
+    private readonly search: GoogleSearchService,
   ) {}
 
   /**
@@ -84,6 +88,9 @@ export class LlmService {
       return { ...m, content: extractInlineData(m.content) };
     });
 
+    const withPolicy = this.ensureSearchPolicy(normalized);
+    const enriched = await this.maybeInjectSearch(withPolicy);
+
     const entry = await this.modelConfig.getModel(friendly);
 
     // Some models (e.g., GPT-5 Nano) only accept default temperature.
@@ -94,13 +101,133 @@ export class LlmService {
     const tried = new Set<string>();
     for await (const piece of this.streamWithEntry({
       entry,
-      normalized,
+      normalized: enriched,
       temperature: temperatureOverride,
       maxTokens: maxTokensOverride,
       tried,
     })) {
       yield piece;
     }
+  }
+
+  private async maybeInjectSearch(messages: ChatMessage[]): Promise<ChatMessage[]> {
+    const query = this.extractSearchQuery(messages);
+    if (!query || !this.shouldUseSearch(query)) return messages;
+
+    let results: SearchResult[] = [];
+    try {
+      results = await this.search.search(query, { num: 5 });
+    } catch (err: any) {
+      this.logger.warn(`Web search failed: ${err?.message || err}`);
+      return messages;
+    }
+
+    if (!results.length) return messages;
+
+    const injected: ChatMessage = {
+      role: 'system',
+      content: this.formatSearchMessage(query, results),
+    };
+
+    return this.insertAfterSystem(messages, injected);
+  }
+
+  private ensureSearchPolicy(messages: ChatMessage[]): ChatMessage[] {
+    const hasPolicy = messages.some((msg) => {
+      if (msg.role !== 'system') return false;
+      if (Array.isArray(msg.content)) return false;
+      return typeof msg.content === 'string' && msg.content.includes('Search policy:');
+    });
+
+    if (hasPolicy) return messages;
+
+    const policy: ChatMessage = {
+      role: 'system',
+      content: [
+        'Search policy:',
+        '- You can use web search results when they are provided in the system context.',
+        '- If asked whether you can browse or search the web, answer yes for up-to-date questions and say you will cite sources.',
+        '- If no web results are provided for this response, answer from existing knowledge and say you did not run a live search.',
+      ].join('\n'),
+    };
+
+    return this.insertAfterSystem(messages, policy);
+  }
+
+  private extractSearchQuery(messages: ChatMessage[]): string | null {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const msg = messages[i];
+      if (msg.role !== 'user') continue;
+      const text = this.messageToText(msg.content);
+      const cleaned = this.sanitizeSearchText(text);
+      return cleaned || null;
+    }
+    return null;
+  }
+
+  private messageToText(content: ChatMessage['content']): string {
+    if (Array.isArray(content)) {
+      return content
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n');
+    }
+    return content ?? '';
+  }
+
+  private sanitizeSearchText(text: string): string {
+    if (!text) return '';
+    let out = String(text);
+    out = out.replace(/data:[^\s]+;base64,[A-Za-z0-9+/=]+/gi, '');
+    const markers = ['\nData (base64', '\nContent preview:', '\n[document', '\n[embedded file'];
+    for (const marker of markers) {
+      const idx = out.indexOf(marker);
+      if (idx !== -1) {
+        out = out.slice(0, idx);
+      }
+    }
+    out = out.replace(/\s+/g, ' ').trim();
+    if (out.length > 256) out = out.slice(0, 256).trim();
+    return out;
+  }
+
+  private shouldUseSearch(text: string): boolean {
+    const normalized = text.toLowerCase();
+    if (normalized.length < 8) return false;
+
+    const freshness =
+      /\b(latest|recent|today|now|current|currently|as of|up[- ]?to[- ]?date|this week|this month|this year|breaking|news|update|updated|newest|live)\b/;
+    const dynamic =
+      /\b(price|stock|quote|exchange rate|rate|weather|forecast|score|standings|odds|availability|release date|launch|earnings|filing|results|schedule|timetable|tickets|traffic|outage)\b/;
+    const time =
+      /\b(20\d{2}|yesterday|tomorrow|last week|next week|last month|next month|last year|next year|q[1-4])\b/;
+    const intent = /\b(what|who|when|where|how|which|status|update|news|current)\b/;
+
+    return freshness.test(normalized) || dynamic.test(normalized) || (time.test(normalized) && intent.test(normalized));
+  }
+
+  private formatSearchMessage(query: string, results: SearchResult[]): string {
+    const lines = [
+      'Web search results (Google Custom Search).',
+      `Query: ${query}`,
+      `Retrieved: ${new Date().toISOString()}`,
+      '',
+      'Results:',
+      ...results.map((result, idx) => {
+        const snippet = result.snippet ? `Snippet: ${result.snippet}` : 'Snippet:';
+        return `${idx + 1}. ${result.title}\n${result.link}\n${snippet}`;
+      }),
+      '',
+      'Use these results to answer the user. Cite sources by URL.',
+    ];
+
+    return lines.join('\n');
+  }
+
+  private insertAfterSystem(messages: ChatMessage[], injected: ChatMessage): ChatMessage[] {
+    const idx = messages.findIndex((msg) => msg.role !== 'system');
+    if (idx === -1) return [...messages, injected];
+    return [...messages.slice(0, idx), injected, ...messages.slice(idx)];
   }
 
   private async *streamWithEntry(params: {
