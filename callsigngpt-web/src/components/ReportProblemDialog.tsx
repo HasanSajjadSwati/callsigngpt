@@ -1,7 +1,8 @@
 'use client';
 
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import ConfirmDialog from './ConfirmDialog';
 import StatusDialog from './StatusDialog';
 
 type ReportProblemDialogProps = {
@@ -22,9 +23,42 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [successOpen, setSuccessOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const wasOpenRef = useRef(open);
+
+  const resetForm = useCallback(() => {
+    setSubject('');
+    setDescription('');
+    setReporterEmail(email);
+    setFiles([]);
+    setError('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [email]);
+
+  const hasChanges =
+    subject.trim() !== '' ||
+    description.trim() !== '' ||
+    files.length > 0 ||
+    reporterEmail.trim() !== email.trim();
+
+  const closeAndReset = useCallback(() => {
+    resetForm();
+    setConfirmOpen(false);
+    onClose();
+  }, [onClose, resetForm]);
+
+  const requestClose = useCallback(() => {
+    if (hasChanges) {
+      setConfirmOpen(true);
+      return;
+    }
+    closeAndReset();
+  }, [closeAndReset, hasChanges]);
 
   // Keep email in sync with auth changes
   useEffect(() => {
@@ -40,11 +74,14 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        if (confirmOpen) return;
+        requestClose();
+      }
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  }, [open, confirmOpen, requestClose]);
 
   // Prevent body scroll when open
   useEffect(() => {
@@ -56,15 +93,13 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
     };
   }, [open]);
 
-  const resetForm = () => {
-    setSubject('');
-    setDescription('');
-    setFiles([]);
-    setError('');
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  useEffect(() => {
+    if (wasOpenRef.current && !open) {
+      resetForm();
+      setConfirmOpen(false);
     }
-  };
+    wasOpenRef.current = open;
+  }, [open, resetForm]);
 
   const handleFiles = (fileList: FileList | null) => {
     if (!fileList) return;
@@ -151,7 +186,7 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
     >
       <div
         className="absolute inset-0 bg-black/70 backdrop-blur-xl"
-        onClick={onClose}
+        onClick={requestClose}
         aria-hidden="true"
       />
 
@@ -173,7 +208,7 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={requestClose}
               className="rounded-full p-2 text-zinc-400 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
               aria-label="Close"
             >
@@ -276,9 +311,7 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
             <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => {
-                  onClose();
-                }}
+                onClick={requestClose}
                 className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
               >
                 Cancel
@@ -314,10 +347,24 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
     />
   );
 
+  const confirmContent = (
+    <ConfirmDialog
+      isOpen={confirmOpen}
+      title="Discard report?"
+      message="You have unsent changes. Closing now will clear your report."
+      confirmText="Discard"
+      cancelText="Keep editing"
+      variant="danger"
+      onConfirm={closeAndReset}
+      onCancel={() => setConfirmOpen(false)}
+    />
+  );
+
   return (
     <>
       {mounted ? createPortal(dialogContent, document.body) : dialogContent}
       {mounted ? createPortal(statusContent, document.body) : statusContent}
+      {mounted ? createPortal(confirmContent, document.body) : confirmContent}
     </>
   );
 }
