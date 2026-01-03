@@ -67,6 +67,21 @@ const maybeDecodeText = (src: string) => {
 const MAX_HISTORY = 60;
 const MAX_CONTEXT_CHARS = 12_000;
 const MAX_RESPONSE_TOKENS = 20_000;
+const SEARCH_STATUS_PREFIX = '[[[SEARCH_STATUS]]]';
+
+const parseSearchStatus = (chunk: string): { state: string; query?: string } | null => {
+  if (!chunk || !chunk.startsWith(SEARCH_STATUS_PREFIX)) return null;
+  const payload = chunk.slice(SEARCH_STATUS_PREFIX.length);
+  try {
+    const parsed = JSON.parse(payload);
+    if (parsed && typeof parsed === 'object' && typeof parsed.state === 'string') {
+      return parsed;
+    }
+  } catch {
+    // ignore parse errors
+  }
+  return { state: 'start' };
+};
 
 const estimateContentChars = (content: ChatMessage['content']) => {
   if (Array.isArray(content)) {
@@ -174,6 +189,8 @@ export function useStreamingChat({
 }: UseStreamingChatArgs) {
   const [loading, setLoading] = useState(false);
   const [interrupted, setInterrupted] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [searchQuery, setSearchQuery] = useState<string | null>(null);
   const ctrlRef = useRef<AbortController | null>(null);
 
   const msgsRef = useRef<UIMsg[]>(msgs);
@@ -223,6 +240,8 @@ export function useStreamingChat({
     ctrlRef.current = null;
     setInterrupted(true);
     setLoading(false);
+    setSearching(false);
+    setSearchQuery(null);
   }, []);
 
   useEffect(() => {
@@ -250,6 +269,8 @@ export function useStreamingChat({
       }
       ctrlRef.current = null;
       setLoading(false);
+      setSearching(false);
+      setSearchQuery(null);
     }
   }, [model]);
 
@@ -334,6 +355,8 @@ export function useStreamingChat({
       ctrlRef.current = controller;
       setLoading(true);
       setInterrupted(false);
+      setSearching(false);
+      setSearchQuery(null);
 
       try {
         const apiUrl = getApiBase();
@@ -385,7 +408,17 @@ export function useStreamingChat({
           signal: controller.signal,
           path: endpointPath,
         })) {
+          const status = parseSearchStatus(chunk);
+          if (status) {
+            if (status.state === 'start') {
+              setSearching(true);
+              setSearchQuery(typeof status.query === 'string' ? status.query : null);
+            }
+            continue;
+          }
           if (chunk) {
+            setSearching(false);
+            setSearchQuery(null);
             finalAssistantText += chunk;
             // Detect server-side fallback notice for GPT-5 quota and notify UI to switch picker
             if (!fallbackNotified && /gpt-5 daily limit reached/i.test(chunk)) {
@@ -425,10 +458,14 @@ export function useStreamingChat({
         const msg = typeof err?.message === 'string' ? err.message : 'Request failed';
         setInterrupted(true);
         onError?.(msg);
+        setSearching(false);
+        setSearchQuery(null);
         // Keep chat clean: errors are surfaced via popup only.
       } finally {
         if (ctrlRef.current === controller) ctrlRef.current = null;
         setLoading(false);
+        setSearching(false);
+        setSearchQuery(null);
       }
     },
     [
@@ -444,5 +481,5 @@ export function useStreamingChat({
     ],
   );
 
-  return { send, stop, loading, interrupted };
+  return { send, stop, loading, interrupted, searching, searchQuery };
 }

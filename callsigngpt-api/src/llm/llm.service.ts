@@ -6,6 +6,7 @@ import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
 import { GoogleSearchService, type SearchResult } from '../search/google-search.service';
 
 const DEFAULT_FALLBACK_MODEL = 'basic:gpt-4o-mini';
+const SEARCH_STATUS_PREFIX = '[[[SEARCH_STATUS]]]';
 
 type ChatContentPart =
   | { type: 'text'; text: string }
@@ -89,7 +90,14 @@ export class LlmService {
     });
 
     const withPolicy = this.ensureSearchPolicy(normalized);
-    const enriched = await this.maybeInjectSearch(withPolicy);
+    const searchQuery = this.extractSearchQuery(withPolicy);
+    const shouldSearch = Boolean(searchQuery && this.shouldUseSearch(searchQuery));
+    if (shouldSearch && searchQuery) {
+      yield this.formatSearchStatusChunk('start', searchQuery);
+    }
+    const enriched = shouldSearch
+      ? await this.maybeInjectSearch(withPolicy, { query: searchQuery, force: true })
+      : withPolicy;
 
     const entry = await this.modelConfig.getModel(friendly);
 
@@ -110,9 +118,13 @@ export class LlmService {
     }
   }
 
-  private async maybeInjectSearch(messages: ChatMessage[]): Promise<ChatMessage[]> {
-    const query = this.extractSearchQuery(messages);
-    if (!query || !this.shouldUseSearch(query)) return messages;
+  private async maybeInjectSearch(
+    messages: ChatMessage[],
+    opts: { query?: string | null; force?: boolean } = {},
+  ): Promise<ChatMessage[]> {
+    const query = opts.query ?? this.extractSearchQuery(messages);
+    if (!query) return messages;
+    if (!opts.force && !this.shouldUseSearch(query)) return messages;
 
     let results: SearchResult[] = [];
     try {
@@ -214,6 +226,10 @@ export class LlmService {
     ];
 
     return lines.join('\n');
+  }
+
+  private formatSearchStatusChunk(state: 'start', query: string): string {
+    return `${SEARCH_STATUS_PREFIX}${JSON.stringify({ state, query })}`;
   }
 
   private insertAfterSystem(messages: ChatMessage[], injected: ChatMessage): ChatMessage[] {

@@ -11,6 +11,7 @@ import TopBar from '@/components/TopBar';
 import Sidebar from '@/components/Sidebar';
 import MessageBubble from '@/components/MessageBubble';
 import TypingIndicator from '@/components/TypingIndicator';
+import SearchIndicator from '@/components/SearchIndicator';
 import Composer from '@/components/Composer';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import StatusDialog from '@/components/StatusDialog';
@@ -207,7 +208,7 @@ function HomeInner() {
   }>({ open: false, title: '', message: '', variant: 'error' });
 
   // Streaming chat
-  const { send, stop, loading, interrupted } = useStreamingChat({
+  const { send, stop, loading, interrupted, searching, searchQuery } = useStreamingChat({
     accessToken,
     model,
     msgs,
@@ -470,6 +471,7 @@ function HomeInner() {
                     {safeMsgs.map((m) => (
                       <MessageBubble key={m.id} msg={m} />
                     ))}
+                    {searching && <SearchIndicator query={searchQuery} />}
                     {loading && <TypingIndicator />}
                     <div
                       className={[
