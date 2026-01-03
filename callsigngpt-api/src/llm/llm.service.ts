@@ -145,9 +145,10 @@ export class LlmService {
       role: 'system',
       content: [
         'Search policy:',
-        '- You can use web search results when they are provided in the system context.',
-        '- If asked whether you can browse or search the web, answer yes for up-to-date questions and say you will cite sources.',
-        '- If no web results are provided for this response, answer from existing knowledge and say you did not run a live search.',
+        '- Web search runs by default for each user request when possible.',
+        '- Use web search results when they are provided in the system context.',
+        '- If asked whether you can browse or search the web, answer yes and say you will cite sources.',
+        '- If no web results are provided for this response, answer from existing knowledge and say you could not retrieve live results.',
       ].join('\n'),
     };
 
@@ -193,17 +194,8 @@ export class LlmService {
 
   private shouldUseSearch(text: string): boolean {
     const normalized = text.toLowerCase();
-    if (normalized.length < 8) return false;
-
-    const freshness =
-      /\b(latest|recent|today|now|current|currently|as of|up[- ]?to[- ]?date|this week|this month|this year|breaking|news|update|updated|newest|live)\b/;
-    const dynamic =
-      /\b(price|stock|quote|exchange rate|rate|weather|forecast|score|standings|odds|availability|release date|launch|earnings|filing|results|schedule|timetable|tickets|traffic|outage)\b/;
-    const time =
-      /\b(20\d{2}|yesterday|tomorrow|last week|next week|last month|next month|last year|next year|q[1-4])\b/;
-    const intent = /\b(what|who|when|where|how|which|status|update|news|current)\b/;
-
-    return freshness.test(normalized) || dynamic.test(normalized) || (time.test(normalized) && intent.test(normalized));
+    if (!normalized.length) return false;
+    return true;
   }
 
   private formatSearchMessage(query: string, results: SearchResult[]): string {

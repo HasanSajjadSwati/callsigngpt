@@ -392,10 +392,6 @@ function HomeInner() {
             </svg>
             New chat
           </button>
-          <span className="ml-auto inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-100 shadow-inner">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_6px_rgba(16,185,129,0.15)]" />
-            Live
-          </span>
         </div>
 
         <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-start">
