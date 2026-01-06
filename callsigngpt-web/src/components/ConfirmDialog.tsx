@@ -68,31 +68,28 @@ export default function ConfirmDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-dialog-title"
       aria-describedby="confirm-dialog-message"
     >
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-xl"
+        className="absolute inset-0 bg-black/60"
         onClick={onCancel}
         aria-hidden="true"
       />
 
       <div
         ref={dialogRef}
-        className="relative z-10 w-full max-w-lg overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-zinc-950/95 via-zinc-950/80 to-black/80 shadow-[0_25px_120px_rgba(0,0,0,0.4)]"
+        className="glass-panel relative z-10 w-full max-w-md overflow-hidden rounded-2xl p-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="absolute inset-x-8 top-0 h-32 bg-gradient-to-r from-white/5 via-transparent to-white/5 blur-3xl opacity-60 pointer-events-none" />
-        <div className="relative p-8">
+        <div className="relative">
           <div
-            className={`mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/20 bg-gradient-to-br ${
-              isDanger
-                ? 'from-rose-500/70 via-red-500/50 to-orange-400/40'
-                : 'from-emerald-500/70 via-cyan-400/50 to-sky-500/40'
-            } text-white shadow-lg`}
+            className={`mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] ${
+              isDanger ? 'text-red-300' : 'text-[color:var(--ui-accent)]'
+            }`}
           >
             {isDanger ? (
               <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,26 +112,26 @@ export default function ConfirmDialog({
             )}
           </div>
 
-          <h2 id="confirm-dialog-title" className="mb-3 text-center text-2xl font-semibold text-white">
+          <h2 id="confirm-dialog-title" className="mb-2 text-center text-xl font-semibold text-[color:var(--ui-text)]">
             {title}
           </h2>
           <p id="confirm-dialog-message" className="text-center text-sm text-zinc-400">
             {message}
           </p>
 
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <button
               onClick={onCancel}
-              className="flex-1 rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-white/40 hover:text-white"
+              className="flex-1 rounded-xl border border-[color:var(--ui-border)] bg-transparent px-3 py-2 text-sm font-medium text-[color:var(--ui-text)] transition hover:bg-white/5"
             >
               {cancelText}
             </button>
             <button
               ref={confirmButtonRef}
               onClick={onConfirm}
-              className={`flex-1 rounded-2xl px-4 py-3 text-sm font-semibold ${
+              className={`flex-1 rounded-xl px-3 py-2 text-sm font-semibold ${
                 isDanger
-                  ? 'bg-gradient-to-r from-rose-500 via-red-500 to-orange-400 text-white shadow-red-500/30 hover:opacity-90'
+                  ? 'border border-red-500/40 bg-red-500/15 text-red-100 hover:bg-red-500/25'
                   : 'accent-button'
               }`}
             >

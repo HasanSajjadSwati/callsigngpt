@@ -13,18 +13,15 @@ type StatusDialogProps = {
   onClose: () => void;
 };
 
-const variantStyles: Record<StatusVariant, { gradient: string; text: string }> = {
+const variantStyles: Record<StatusVariant, { tone: string }> = {
   error: {
-    gradient: 'from-rose-500/70 via-red-500/50 to-orange-400/40',
-    text: 'text-rose-100',
+    tone: 'text-red-300',
   },
   success: {
-    gradient: 'from-emerald-500/70 via-green-500/50 to-teal-400/40',
-    text: 'text-emerald-100',
+    tone: 'text-emerald-300',
   },
   info: {
-    gradient: 'from-sky-500/70 via-cyan-500/50 to-indigo-400/40',
-    text: 'text-sky-100',
+    tone: 'text-[color:var(--ui-accent)]',
   },
 };
 
@@ -71,26 +68,25 @@ export default function StatusDialog({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="status-dialog-title"
       aria-describedby="status-dialog-message"
     >
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-xl"
+        className="absolute inset-0 bg-black/60"
         onClick={onClose}
         aria-hidden="true"
       />
 
       <div
-        className="relative z-10 w-full max-w-lg overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-zinc-950/95 via-zinc-950/80 to-black/80 shadow-[0_25px_120px_rgba(0,0,0,0.4)]"
+        className="glass-panel relative z-10 w-full max-w-md overflow-hidden rounded-2xl p-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="absolute inset-x-8 top-0 h-32 bg-gradient-to-r from-white/5 via-transparent to-white/5 blur-3xl opacity-60 pointer-events-none" />
-        <div className="relative p-8">
+        <div className="relative">
           <div
-            className={`mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/20 bg-gradient-to-br ${styles.gradient} ${styles.text} shadow-lg`}
+            className={`mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] ${styles.tone}`}
           >
             {variant === 'error' && (
               <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -124,18 +120,18 @@ export default function StatusDialog({
             )}
           </div>
 
-          <h2 id="status-dialog-title" className="mb-3 text-center text-2xl font-semibold text-white">
+          <h2 id="status-dialog-title" className="mb-2 text-center text-xl font-semibold text-[color:var(--ui-text)]">
             {title}
           </h2>
           <p id="status-dialog-message" className="text-center text-sm text-zinc-300">
             {message}
           </p>
 
-          <div className="mt-8 flex justify-center">
+          <div className="mt-3 flex justify-center">
             <button
               ref={buttonRef}
               onClick={onClose}
-              className="w-full rounded-2xl accent-button px-4 py-3 text-sm font-semibold"
+              className="w-full rounded-xl accent-button px-3 py-2 text-sm font-semibold"
             >
               {primaryText}
             </button>

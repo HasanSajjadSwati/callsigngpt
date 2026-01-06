@@ -72,37 +72,21 @@ export default function MessageBubble({ msg }: { msg: Message }) {
     [],
   );
 
-  const userStyle = useMemo<CSSProperties>(
-    () => ({
-      backgroundImage: 'linear-gradient(125deg, var(--accent-1), var(--accent-2), var(--accent-3))',
-      borderColor: 'color-mix(in srgb, var(--accent-2) 38%, transparent)',
-      boxShadow: '0 18px 42px color-mix(in srgb, var(--accent-2) 45%, transparent)',
-      color: '#f8fafc',
-    }),
-    [],
-  );
-
-  const assistantStyle = useMemo<CSSProperties>(
-    () => ({
-      borderColor: 'color-mix(in srgb, var(--accent-2) 22%, transparent)',
-      boxShadow: '0 18px 42px color-mix(in srgb, var(--accent-2) 28%, transparent)',
-    }),
-    [],
-  );
-
   const bubbleBase = [
-    'inline-block max-w-full rounded-3xl px-5 py-4 text-[15px] leading-6 whitespace-pre-wrap break-words',
-    'border border-white/5 shadow-[0_15px_40px_rgba(2,6,23,.45)] transition-all duration-300',
-    'hover:-translate-y-0.5 hover:shadow-[0_25px_70px_rgba(2,6,23,.55)]',
+    'inline-block max-w-full rounded-2xl px-3 py-2 text-[15px] leading-6 whitespace-pre-wrap break-words',
+    'border border-transparent',
   ].join(' ');
 
   const bubbleWrapper = hasCode
-    ? 'w-full min-w-0 max-w-[92%] lg:max-w-[110ch]'
-    : 'w-fit min-w-0 max-w-[92%] lg:max-w-[110ch]';
+    ? 'w-full min-w-0 max-w-[88%] lg:max-w-[90ch]'
+    : 'w-fit min-w-0 max-w-[88%] lg:max-w-[90ch]';
 
-  const bubbleUser = 'border-transparent';
-  const bubbleAsst = 'bg-white/10 text-zinc-100 backdrop-blur-sm';
-  const bubbleSystem = 'bg-white/5 text-emerald-200 italic';
+  const bubbleUser =
+    'bg-[color:var(--ui-input)] text-[color:var(--ui-text)] border-[color:var(--ui-border-strong)]';
+  const bubbleAsst =
+    'bg-[color:var(--ui-surface)] text-[color:var(--ui-text)] border-[color:var(--ui-border)]';
+  const bubbleSystem =
+    'bg-[color:var(--ui-surface)] text-[color:var(--ui-text-muted)] italic border-[color:var(--ui-border)]';
 
   const handleCopy = useCallback(async (text: string, idx: number) => {
     try {
@@ -124,29 +108,27 @@ export default function MessageBubble({ msg }: { msg: Message }) {
           // Hard guarantees for stubborn browsers / older Tailwind
           style={{
             ...baseStyle,
-            ...(isUser ? userStyle : {}),
-            ...(!isUser && !isSystem ? assistantStyle : {}),
           }}
         >
-          <div className="space-y-4">
+          <div className="space-y-3">
             {segments.map((segment, idx) =>
               segment.type === 'code' ? (
                 <div
                   key={`code-${idx}`}
-                  className="relative max-w-full rounded-xl border border-white/15 bg-slate-950/80 text-slate-100"
+                  className="relative max-w-full rounded-xl border border-[color:var(--ui-code-border)] bg-[color:var(--ui-code-bg)] text-zinc-100"
                 >
-                  <div className="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-wide text-white/70">
+                  <div className="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-wide text-zinc-400">
                     <span className="font-semibold">{segment.lang || 'code'}</span>
                     <button
                       type="button"
                       onClick={() => handleCopy(segment.value, idx)}
-                      className="rounded-full border border-white/30 bg-white/10 px-3 py-1 text-[11px] font-semibold text-white transition hover:border-white/60 hover:bg-white/20"
+                      className="rounded-full border border-[color:var(--ui-border)] bg-transparent px-3 py-1 text-[11px] font-semibold text-zinc-300 transition hover:bg-white/10"
                     >
                       {copiedIdx === idx ? 'Copied' : 'Copy'}
                     </button>
                   </div>
                   <pre
-                    className="scroll-area overflow-x-auto overscroll-x-contain px-4 pb-4 text-[13px] leading-6"
+                    className="scroll-area overflow-x-auto overscroll-x-contain px-3 pb-3 text-[13px] leading-6"
                     style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
                   >
                     <code className="whitespace-pre font-mono">{segment.value}</code>
@@ -164,7 +146,7 @@ export default function MessageBubble({ msg }: { msg: Message }) {
           </div>
 
           {msg.attachment && (
-            <div className="mt-4 rounded-2xl border border-white/20 bg-black/60 p-2">
+            <div className="mt-3 rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] p-2">
               {msg.attachment.type === 'image' ? (
                 <>
                   <img
@@ -172,18 +154,18 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                     alt={msg.attachment.name}
                     className="w-full max-h-48 rounded-xl object-contain"
                   />
-                  <p className="mt-2 text-xs text-white/70">
-                    {msg.attachment.name} · {msg.attachment.mime}
+                  <p className="mt-2 text-xs text-zinc-400">
+                    {msg.attachment.name} - {msg.attachment.mime}
                   </p>
                 </>
               ) : (
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--ui-surface-alt)]">
                         <svg
                           viewBox="0 0 24 24"
-                          className="h-6 w-6 text-white/70"
+                          className="h-6 w-6 text-zinc-400"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="1.5"
@@ -193,11 +175,11 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                         </svg>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-white">
+                        <p className="text-sm font-medium text-[color:var(--ui-text)]">
                           {msg.attachment.name}
                         </p>
-                        <p className="text-xs text-white/60">
-                          {msg.attachment.mime} · {formatBytes(msg.attachment.size)}
+                        <p className="text-xs text-zinc-400">
+                          {msg.attachment.mime} - {formatBytes(msg.attachment.size)}
                         </p>
                       </div>
                     </div>
@@ -205,7 +187,7 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                       <a
                         href={msg.attachment.src}
                         download={msg.attachment.name}
-                        className="rounded-full border border-white/30 bg-white/5 px-3 py-1 text-xs font-medium text-white transition hover:border-white/60 hover:bg-white/10"
+                        className="rounded-full border border-[color:var(--ui-border)] bg-transparent px-3 py-1 text-xs font-medium text-zinc-200 transition hover:bg-white/5"
                       >
                         Download
                       </a>
@@ -219,14 +201,14 @@ export default function MessageBubble({ msg }: { msg: Message }) {
 
         {timestampLabel && (
           <div
-            className={`mt-2 flex text-[12px] text-white/70 ${
+            className={`mt-1.5 flex text-[11px] text-zinc-500 ${
               isUser ? 'justify-end' : 'justify-start'
             }`}
           >
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/12 bg-black/40 px-2.5 py-1 shadow-[0_12px_30px_rgba(2,6,23,.55)] backdrop-blur-sm">
+            <span className="inline-flex items-center gap-1.5">
               <svg
                 viewBox="0 0 24 24"
-                className="h-4 w-4 text-white/80"
+                className="h-4 w-4"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth="1.6"
@@ -234,7 +216,7 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                 <circle cx="12" cy="12" r="9" />
                 <path d="M12 7v5.2l3 1.8" />
               </svg>
-              <span className="font-semibold tracking-tight">{timestampLabel}</span>
+              <span className="font-medium tracking-tight">{timestampLabel}</span>
             </span>
           </div>
         )}

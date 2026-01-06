@@ -179,27 +179,26 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
 
   const dialogContent = !open ? null : (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3"
       role="dialog"
       aria-modal="true"
       aria-labelledby="report-problem-title"
     >
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-xl"
+        className="absolute inset-0 bg-black/60"
         onClick={requestClose}
         aria-hidden="true"
       />
 
       <div
-        className="relative z-10 w-full max-w-2xl overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-zinc-950/95 via-zinc-950/85 to-black/85 shadow-[0_25px_120px_rgba(0,0,0,0.4)]"
+        className="glass-panel relative z-10 w-full max-w-2xl overflow-hidden rounded-2xl p-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="absolute inset-x-8 top-0 h-28 bg-gradient-to-r from-white/10 via-transparent to-white/10 blur-3xl opacity-60 pointer-events-none" />
-        <div className="relative p-8">
-          <div className="flex items-start justify-between gap-4">
+        <div className="relative">
+          <div className="flex items-start justify-between gap-3">
             <div>
-              <p className="text-sm uppercase tracking-[0.35em] text-emerald-300/80">Support</p>
-              <h2 id="report-problem-title" className="mt-1 text-2xl font-semibold text-white">
+              <p className="text-sm uppercase tracking-[0.35em] text-[color:var(--ui-text-subtle)]">Support</p>
+              <h2 id="report-problem-title" className="mt-1 text-2xl font-semibold text-[color:var(--ui-text)]">
                 Report a problem
               </h2>
               <p className="mt-1 text-sm text-zinc-400">
@@ -209,7 +208,7 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
             <button
               type="button"
               onClick={requestClose}
-              className="rounded-full p-2 text-zinc-400 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+              className="rounded-full p-2 text-zinc-400 transition hover:bg-white/10 hover:text-[color:var(--ui-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ui-accent)]"
               aria-label="Close"
             >
               <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2">
@@ -218,8 +217,8 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
             </button>
           </div>
 
-          <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
-            <div className="grid gap-3 md:grid-cols-2">
+          <form className="mt-3 space-y-3" onSubmit={handleSubmit}>
+            <div className="grid gap-2 md:grid-cols-2">
               <label className="space-y-2">
                 <span className="text-xs uppercase tracking-[0.22em] text-zinc-400">Subject</span>
                 <input
@@ -227,7 +226,7 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
                   placeholder="Something isn't working as expected"
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-zinc-500 focus:border-emerald-300/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/30"
+                  className="w-full rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-input)] px-3 py-2.5 text-sm text-[color:var(--ui-text)] placeholder:text-[color:var(--ui-text-subtle)] focus:border-[color:var(--ui-accent)] focus:outline-none focus:ring-2 focus:ring-[color:var(--ui-accent)]"
                 />
               </label>
 
@@ -238,7 +237,7 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
                   value={reporterEmail}
                   onChange={(e) => setReporterEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-zinc-500 focus:border-emerald-300/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/30"
+                  className="w-full rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-input)] px-3 py-2.5 text-sm text-[color:var(--ui-text)] placeholder:text-[color:var(--ui-text-subtle)] focus:border-[color:var(--ui-accent)] focus:outline-none focus:ring-2 focus:ring-[color:var(--ui-accent)]"
                 />
               </label>
             </div>
@@ -249,7 +248,7 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Include any steps to reproduce, expected behavior, and what you saw instead."
-                className="min-h-[140px] w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-zinc-500 focus:border-emerald-300/70 focus:outline-none focus:ring-2 focus:ring-emerald-300/30"
+                className="min-h-[120px] w-full rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-input)] px-3 py-2.5 text-sm text-[color:var(--ui-text)] placeholder:text-[color:var(--ui-text-subtle)] focus:border-[color:var(--ui-accent)] focus:outline-none focus:ring-2 focus:ring-[color:var(--ui-accent)]"
               />
             </label>
 
@@ -262,7 +261,7 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-medium text-white transition hover:border-white/40 hover:bg-white/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                  className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--ui-border)] bg-transparent px-2.5 py-1.5 text-xs font-medium text-[color:var(--ui-text)] transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ui-accent)]"
                 >
                   <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M12 5v14M5 12h14" />
@@ -280,20 +279,20 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
               </div>
 
               {files.length > 0 && (
-                <ul className="space-y-2 rounded-2xl border border-white/5 bg-white/5 p-3">
+                <ul className="space-y-2 rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] p-2.5">
                   {files.map((file, idx) => (
                     <li
                       key={`${file.name}-${idx}`}
-                      className="flex items-center justify-between gap-3 rounded-xl bg-white/5 px-3 py-2 text-sm text-white"
+                      className="flex items-center justify-between gap-3 rounded-xl bg-[color:var(--ui-surface)] px-2.5 py-1.5 text-sm text-[color:var(--ui-text)]"
                     >
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-white/90">{file.name}</p>
+                        <p className="truncate text-sm font-medium text-[color:var(--ui-text)]">{file.name}</p>
                         <p className="text-xs text-zinc-400">{formattedFileSize(file.size)}</p>
                       </div>
                       <button
                         type="button"
                         onClick={() => removeFile(idx)}
-                        className="rounded-full p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                        className="rounded-full p-1.5 text-zinc-400 transition hover:bg-white/10 hover:text-[color:var(--ui-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ui-accent)]"
                         aria-label={`Remove ${file.name}`}
                       >
                         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
@@ -308,21 +307,21 @@ export default function ReportProblemDialog({ open, onClose, email = '', name = 
 
             {error && <p className="text-sm text-rose-200">{error}</p>}
 
-            <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={requestClose}
-                className="rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-medium text-zinc-200 transition hover:border-white/40 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
+                className="rounded-xl border border-[color:var(--ui-border)] bg-transparent px-3 py-2 text-sm font-medium text-[color:var(--ui-text)] transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ui-accent)]"
               >
                 Cancel
               </button>
               <button
                 type="submit"
                 disabled={submitting}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl accent-button px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-70"
+                className="inline-flex items-center justify-center gap-2 rounded-xl accent-button px-3 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {submitting && (
-                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-black/40 border-t-black" aria-hidden="true" />
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
                 )}
                 Send report
               </button>

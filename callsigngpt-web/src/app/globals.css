@@ -13,17 +13,35 @@
   --panel-border: rgba(248, 250, 252, 0.05);
   --panel-shadow: rgba(2, 6, 23, 0.55);
   --accent-ring: rgba(52, 211, 153, 0.4);
+  --ui-bg: #202123;
+  --ui-bg-elev: #1c1d22;
+  --ui-surface: #2b2c33;
+  --ui-surface-alt: #24252b;
+  --ui-border: #3a3b43;
+  --ui-border-strong: #4a4b55;
+  --ui-text: #e5e7eb;
+  --ui-text-muted: #a1a1aa;
+  --ui-text-subtle: #71717a;
+  --ui-accent: #10a37f;
+  --ui-accent-strong: #0f8b6b;
+  --ui-accent-soft: rgba(16, 163, 127, 0.18);
+  --ui-input: #30313a;
+  --ui-code-bg: #111216;
+  --ui-code-border: #2f3037;
+  --ui-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --ui-shadow-soft: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 html {
-  background-color: var(--background);
+  background-color: var(--ui-bg);
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
+  color-scheme: dark;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--ui-bg);
+  --color-foreground: var(--ui-text);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -32,15 +50,13 @@ body {
   min-height: 100vh;
   min-height: 100dvh;
   background:
-    radial-gradient(120% 120% at 15% 20%, var(--glow-1), transparent 55%),
-    radial-gradient(75% 90% at 85% -25%, var(--glow-2), transparent 70%),
-    linear-gradient(180deg, var(--background), var(--background-end));
-  background-attachment: fixed;
+    radial-gradient(120% 120% at 50% -10%, rgba(255, 255, 255, 0.04), transparent 60%),
+    linear-gradient(180deg, var(--ui-bg), var(--ui-bg-elev));
   background-repeat: no-repeat;
   background-size: cover;
-  color: var(--foreground);
+  color: var(--ui-text);
   font-family: var(--font-geist-sans), 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 @supports (height: 100dvh) {
@@ -54,25 +70,24 @@ body {
 }
 
 select {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--foreground);
+  background: var(--ui-input);
+  color: var(--ui-text);
 }
 
 select option {
-  background: rgba(2, 6, 23, 0.95);
-  color: var(--foreground);
+  background: var(--ui-bg);
+  color: var(--ui-text);
 }
 
 ::selection {
-  background: color-mix(in srgb, var(--accent-2) 60%, transparent);
-  color: var(--foreground);
+  background: var(--ui-accent-soft);
+  color: var(--ui-text);
 }
 
 .glass-panel {
-  background: var(--panel-surface);
-  border: 1px solid var(--panel-border);
-  box-shadow: 0 20px 80px var(--panel-shadow);
-  backdrop-filter: blur(28px);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  box-shadow: var(--ui-shadow);
 }
 
 .gradient-border {
@@ -80,18 +95,7 @@ select option {
 }
 
 .gradient-border::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 3px;
-  background: linear-gradient(130deg, var(--accent-1), var(--accent-2), var(--accent-3));
-  -webkit-mask:
-    linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-          mask-composite: exclude;
-  pointer-events: none;
+  content: none;
 }
 
 /* Use this when the base .gradient-border might be set to fixed; keeps dropdown positioned with its anchor */
@@ -124,7 +128,7 @@ select option {
 .scroll-area {
   scrollbar-gutter: stable both-edges;
   scrollbar-width: thin;
-  scrollbar-color: var(--accent-2) transparent;
+  scrollbar-color: var(--ui-border-strong) transparent;
 }
 
 .scroll-area::-webkit-scrollbar {
@@ -137,7 +141,7 @@ select option {
 }
 
 .scroll-area::-webkit-scrollbar-thumb {
-  background-color: var(--accent-2);
+  background-color: var(--ui-border-strong);
   border-radius: 9999px;
   border: 2px solid transparent;
   background-clip: padding-box;
@@ -145,46 +149,43 @@ select option {
 }
 
 .scroll-area:hover::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, var(--accent-2) 70%, transparent);
+  background-color: color-mix(in srgb, var(--ui-border-strong) 80%, transparent);
 }
 
 .scroll-area::-webkit-scrollbar-thumb:active {
-  background-color: color-mix(in srgb, var(--accent-2) 90%, transparent);
+  background-color: color-mix(in srgb, var(--ui-border-strong) 90%, transparent);
 }
 
 .accent-gradient {
-  background-image: linear-gradient(125deg, var(--accent-1), var(--accent-2), var(--accent-3));
+  background-color: var(--ui-accent);
 }
 
 .accent-button {
-  background-image: linear-gradient(125deg, var(--accent-1), var(--accent-2), var(--accent-3));
-  color: #041016;
-  box-shadow:
-    0 12px 34px color-mix(in srgb, var(--accent-2) 55%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--accent-2) 25%, transparent);
-  transition: transform 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
+  background-color: var(--ui-accent);
+  color: #f8fafc;
+  border: 1px solid color-mix(in srgb, var(--ui-accent) 70%, #000);
+  box-shadow: var(--ui-shadow-soft);
+  transition: background-color 160ms ease, box-shadow 160ms ease, opacity 160ms ease;
 }
 
 .accent-button:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 16px 42px color-mix(in srgb, var(--accent-2) 65%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--accent-2) 30%, transparent);
+  background-color: var(--ui-accent-strong);
+  box-shadow: var(--ui-shadow);
 }
 
 .accent-button:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-2) 70%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--ui-accent) 70%, transparent);
   outline-offset: 3px;
 }
 
 .accent-pill {
-  background-image: linear-gradient(125deg, var(--accent-1), var(--accent-2), var(--accent-3));
-  color: #041016;
+  background-color: var(--ui-accent);
+  color: #f8fafc;
 }
 
 .accent-soft {
-  border-color: color-mix(in srgb, var(--accent-2) 35%, transparent);
-  box-shadow: 0 14px 36px color-mix(in srgb, var(--accent-2) 35%, transparent);
+  border-color: color-mix(in srgb, var(--ui-accent) 35%, transparent);
+  box-shadow: var(--ui-shadow-soft);
 }
 
 .history-delete-button img {
@@ -194,6 +195,45 @@ select option {
 
 .history-delete-button:hover img {
   filter: invert(15%) sepia(96%) saturate(6400%) hue-rotate(-5deg) brightness(88%) contrast(110%);
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-fade {
+  animation: fade-up 220ms ease-out;
+}
+
+.stagger-fade > * {
+  animation: fade-up 240ms ease-out both;
+}
+
+.stagger-fade > *:nth-child(1) {
+  animation-delay: 20ms;
+}
+
+.stagger-fade > *:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.stagger-fade > *:nth-child(3) {
+  animation-delay: 100ms;
+}
+
+.stagger-fade > *:nth-child(4) {
+  animation-delay: 140ms;
+}
+
+.stagger-fade > *:nth-child(5) {
+  animation-delay: 180ms;
 }
 
 @media (max-width: 1024px), (hover: none) and (pointer: coarse) {

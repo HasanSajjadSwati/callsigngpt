@@ -66,23 +66,25 @@ function HistoryItem({
   return (
     <div
       className={[
-        'group flex items-center gap-2 rounded-2xl px-3 h-12 transition-all',
+        'group flex items-center gap-1.5 rounded-lg px-2.5 h-10 transition',
         active
-          ? 'bg-white/10 border border-white/20 shadow-[0_10px_30px_rgba(15,23,42,.35)]'
-          : 'border border-transparent hover:border-white/10 hover:bg-white/5',
+          ? 'bg-[color:var(--ui-surface-alt)] border border-[color:var(--ui-border-strong)]'
+          : 'border border-transparent hover:border-[color:var(--ui-border)] hover:bg-white/5',
       ].join(' ')}
     >
       <div
         className={[
-          'flex h-8 w-8 items-center justify-center rounded-xl border border-white/10',
-          active ? 'bg-white/20 text-white' : 'bg-white/5 text-zinc-400 group-hover:text-white',
+          'flex h-7 w-7 items-center justify-center rounded-lg border border-[color:var(--ui-border)]',
+          active
+            ? 'bg-[color:var(--ui-surface)] text-[color:var(--ui-text)]'
+            : 'bg-transparent text-[color:var(--ui-text-muted)] group-hover:text-[color:var(--ui-text)]',
         ].join(' ')}
       >
         <img
           src="/icons8-chat-96.svg"
           alt=""
           aria-hidden="true"
-          className="h-4 w-4"
+          className="h-3.5 w-3.5"
           style={{ filter: 'invert(1)' }}
         />
       </div>
@@ -95,7 +97,7 @@ function HistoryItem({
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditValue(e.target.value)}
           onKeyDown={handleKeyDown}
           onBlur={handleSave}
-          className="flex-1 bg-white/10 border border-white/20 rounded-xl px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-300/50"
+          className="flex-1 rounded-lg border border-[color:var(--ui-border)] bg-[color:var(--ui-input)] px-2.5 py-1 text-sm text-[color:var(--ui-text)] focus:outline-none focus:ring-2 focus:ring-[color:var(--ui-accent)]"
           onClick={(e: React.MouseEvent<HTMLInputElement>) => e.stopPropagation()}
         />
       ) : (
@@ -104,7 +106,7 @@ function HistoryItem({
           className="flex-1 text-left truncate text-[15px]"
           title={title}
         >
-          <span className={active ? 'text-white font-medium' : 'text-zinc-200'}>
+          <span className={active ? 'text-[color:var(--ui-text)] font-medium' : 'text-zinc-200'}>
             {title || 'Untitled chat'}
           </span>
         </button>
@@ -118,7 +120,7 @@ function HistoryItem({
               e.preventDefault();
               onRename();
             }}
-            className="rounded-xl p-1.5 hover:bg-white/10 text-zinc-300 hover:text-white"
+            className="rounded-lg p-1 hover:bg-white/10 text-zinc-300 hover:text-white"
             title="Rename"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
@@ -131,7 +133,7 @@ function HistoryItem({
               e.preventDefault();
               onDelete();
             }}
-            className="history-delete-button rounded-xl p-1.5 hover:bg-white/10 text-zinc-300 hover:text-red-200"
+            className="history-delete-button rounded-lg p-1 hover:bg-white/10 text-zinc-300 hover:text-red-200"
             title="Delete"
           >
             <img
@@ -170,7 +172,9 @@ export default function Sidebar({
   const { session, signOut, accessToken } = useAuth();
 
   const email = session?.user?.email ?? '';
-  const name = session?.user?.name ?? email.split('@')[0] ?? 'User';
+  const metadataName =
+    typeof session?.user?.user_metadata?.name === 'string' ? session.user.user_metadata.name : '';
+  const name = metadataName || session?.user?.name || email.split('@')[0] || 'User';
   const initial = (name || 'U').slice(0, 1).toUpperCase();
 
   const [items, setItems] = useState<Item[]>([]);
@@ -344,13 +348,13 @@ export default function Sidebar({
 
   return (
     <>
-      <aside className="w-full min-w-0 shrink-0 h-full flex flex-col glass-panel rounded-[32px] border border-white/10 px-4 py-5 xl:basis-[26%] xl:max-w-sm">
+      <aside className="w-full min-w-0 shrink-0 h-full flex flex-col glass-panel rounded-2xl px-3 py-3">
       <div className="mb-2 flex justify-end xl:hidden">
         {onClose && (
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-white/15 bg-white/5 text-white transition hover:border-white/30 hover:bg-white/10"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ui-border)] bg-transparent text-[color:var(--ui-text)] transition hover:bg-white/5"
             aria-label="Close sidebar"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
@@ -359,26 +363,26 @@ export default function Sidebar({
           </button>
         )}
       </div>
-      <div className="px-1 pb-4">
+      <div className="px-1 pb-3">
         <div className="flex items-center gap-3">
-          <div className="grid h-12 w-12 place-items-center rounded-2xl accent-pill border border-white/20">
+          <div className="grid h-11 w-11 place-items-center rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)]">
             <img
               src="/callsign-logo.svg"
               alt="CallSignGPT"
-              className="h-7 w-7 opacity-95"
+              className="h-6 w-6 opacity-95"
               draggable={false}
             />
           </div>
           <div>
-            <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Workspace</p>
-            <p className="text-lg font-semibold text-white">CallSignGPT</p>
-          </div>
+          <p className="text-xs uppercase tracking-[0.35em] text-zinc-500">Workspace</p>
+          <p className="text-lg font-semibold text-[color:var(--ui-text)]">CallSignGPT</p>
         </div>
+      </div>
 
-        <button
-          onClick={onNewChat}
-          className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl accent-button px-4 py-3 text-sm font-semibold"
-        >
+      <button
+        onClick={onNewChat}
+        className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl accent-button px-3 py-2.5 text-sm font-medium"
+      >
           <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
             <path d="M12 5v14M5 12h14" />
           </svg>
@@ -386,17 +390,17 @@ export default function Sidebar({
         </button>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto scroll-area px-1 pb-4">
-        <div className="px-2 pb-2">
+      <div className="flex-1 min-h-0 overflow-y-auto scroll-area px-1 pb-3">
+        <div className="px-2 pb-1.5">
           <span className="text-[11px] uppercase tracking-[0.4em] text-zinc-500/80 select-none">
             Recents
           </span>
         </div>
 
-        {loading && <div className="text-xs text-zinc-400 px-3 py-2">Loading…</div>}
+        {loading && <div className="text-xs text-zinc-400 px-2.5 py-1.5">Loading...</div>}
 
         {!loading && (
-          <div className="space-y-2">
+          <div className="space-y-2 stagger-fade">
             {items.map((c) => (
               <HistoryItem
                 key={c.id}
@@ -462,7 +466,7 @@ export default function Sidebar({
               />
             ))}
             {items.length === 0 && (
-              <div className="text-xs text-zinc-500 px-3 py-4">
+              <div className="text-xs text-zinc-500 px-2.5 py-3">
                 You have no chats yet. Start a conversation above.
               </div>
             )}
@@ -470,23 +474,22 @@ export default function Sidebar({
         )}
       </div>
 
-      <div className="mt-auto px-1 pt-4 border-t border-white/5">
+      <div className="mt-auto px-1 pt-3 border-t border-[color:var(--ui-border)]">
         <div className="relative" ref={menuRef}>
           <button
             type="button"
             onClick={() => setMenuOpen((v) => !v)}
-            className="w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-3 flex items-center gap-3 hover:border-white/30 transition"
+            className="w-full rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-2.5 py-2 flex items-center gap-2.5 hover:bg-white/5 transition"
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             title={email}
           >
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white font-semibold">
+            <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[color:var(--ui-surface-alt)] text-[color:var(--ui-text)] font-semibold">
               {initial}
             </span>
             <div className="flex-1 min-w-0 text-left">
-              <div className="text-sm font-semibold text-white truncate">{name}</div>
-              <div className="text-xs text-zinc-400 truncate">{email}</div>
-              <div className="text-[11px] uppercase tracking-[0.3em] text-emerald-300/80">
+              <div className="text-sm font-medium text-[color:var(--ui-text)] truncate">{name}</div>
+              <div className="text-[11px] uppercase tracking-[0.3em] text-[color:var(--ui-text-subtle)]">
                 {formattedPlan}
               </div>
             </div>
@@ -504,7 +507,7 @@ export default function Sidebar({
           {menuOpen && (
             <div
               role="menu"
-              className="glass-panel gradient-border-dropdown absolute left-0 right-0 bottom-full mb-2 z-40 rounded-2xl border border-white/10 shadow-[0_25px_80px_rgba(2,6,23,.7)] backdrop-blur-2xl scroll-area max-h-60 overflow-y-auto p-2"
+              className="glass-panel gradient-border-dropdown absolute left-0 right-0 bottom-full mb-2 z-40 rounded-xl scroll-area max-h-60 overflow-y-auto p-1.5"
             >
               <button
                 role="menuitem"
@@ -512,7 +515,7 @@ export default function Sidebar({
                   setMenuOpen(false);
                   router.push('/account');
                 }}
-                className="block w-full text-left rounded-2xl px-3 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                className="block w-full text-left rounded-lg px-2.5 py-1.5 text-sm text-[color:var(--ui-text)] transition hover:bg-white/10"
               >
                 Account settings
               </button>
@@ -522,7 +525,7 @@ export default function Sidebar({
                   setMenuOpen(false);
                   setReportOpen(true);
                 }}
-                className="block w-full text-left rounded-2xl px-3 py-2 text-sm text-zinc-100 transition hover:bg-white/10"
+                className="block w-full text-left rounded-lg px-2.5 py-1.5 text-sm text-[color:var(--ui-text)] transition hover:bg-white/10"
               >
                 Report a problem
               </button>
@@ -533,7 +536,7 @@ export default function Sidebar({
                   await signOut();
                   router.push('/login');
                 }}
-                className="block w-full text-left rounded-2xl px-3 py-2 text-sm text-red-300 transition hover:bg-red-500/10"
+                className="block w-full text-left rounded-lg px-2.5 py-1.5 text-sm text-red-300 transition hover:bg-red-500/10"
               >
                 Logout
               </button>

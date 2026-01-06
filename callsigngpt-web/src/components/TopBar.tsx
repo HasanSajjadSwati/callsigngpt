@@ -55,52 +55,12 @@ export default function TopBar({ model, setModel, showLogo = false, showStatusBa
   const displayName = currentModel?.label ?? 'CallSignGPT';
 
   return (
-    <header className="min-h-[80px] rounded-[20px] border border-white/10 bg-white/5 px-4 py-4 shadow-[0_8px_30px_rgba(2,6,23,.45)]">
-      <div className="flex h-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+    <header className="min-h-[64px] rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3 py-3">
+      <div className="flex h-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         {showLogo && !isChatPage ? (
           <div className="flex w-full flex-col gap-3">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="grid h-12 w-12 place-items-center rounded-2xl border border-white/20 bg-white/10 shadow-[0_12px_50px_rgba(2,6,23,.6)]">
-                <img
-                  src="/callsign-logo.svg"
-                  alt="CallSignGPT logo"
-                  className="h-7 w-7 opacity-95"
-                  draggable={false}
-                />
-              </div>
-              <div className="flex flex-col leading-tight">
-                <span className="text-[10px] uppercase tracking-[0.45em] text-emerald-200/80">
-                  {displayName}
-                </span>
-                <span className="text-lg font-semibold text-white sm:text-xl">
-                  Pilot conversations with precision.
-                </span>
-                <span className="text-xs text-zinc-400 sm:text-sm">
-                  Model-aware routing, synced history, and audit-ready controls for every team.
-                </span>
-              </div>
-              {showStatusBadge && (
-                <span className="ml-auto hidden rounded-full border border-emerald-300/30 bg-emerald-300/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-50 shadow-inner sm:inline-flex">
-                  Live sync
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {badgeCopy.map((badge) => (
-                <span
-                  key={badge}
-                  className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-200 shadow-[0_10px_30px_rgba(2,6,23,.4)]"
-                >
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
-                  {badge}
-                </span>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="flex items-center gap-3 sm:gap-4">
-            {showLogo && (
-              <div className="grid h-11 w-11 place-items-center rounded-2xl border border-white/15 bg-white/10 shadow-[0_8px_30px_rgba(2,6,23,.45)]">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)]">
                 <img
                   src="/callsign-logo.svg"
                   alt="CallSignGPT logo"
@@ -108,10 +68,50 @@ export default function TopBar({ model, setModel, showLogo = false, showStatusBa
                   draggable={false}
                 />
               </div>
+              <div className="flex flex-col leading-tight">
+                <span className="text-[10px] uppercase tracking-[0.45em] text-[color:var(--ui-text-subtle)]">
+                  {displayName}
+                </span>
+                <span className="text-lg font-semibold text-[color:var(--ui-text)] sm:text-xl">
+                  Pilot conversations with precision.
+                </span>
+                <span className="text-xs text-zinc-400 sm:text-sm">
+                  Model-aware routing, synced history, and audit-ready controls for every team.
+                </span>
+              </div>
+              {showStatusBadge && (
+                <span className="ml-auto hidden rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-[color:var(--ui-text-muted)] sm:inline-flex">
+                  Live
+                </span>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {badgeCopy.map((badge) => (
+                <span
+                  key={badge}
+                  className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-300"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-[color:var(--ui-accent)]" />
+                  {badge}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 sm:gap-3">
+            {showLogo && (
+              <div className="grid h-9 w-9 place-items-center rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)]">
+                <img
+                  src="/callsign-logo.svg"
+                  alt="CallSignGPT logo"
+                  className="h-5 w-5 opacity-95"
+                  draggable={false}
+                />
+              </div>
             )}
             <div className="flex flex-col leading-tight">
               <span className="text-[9px] uppercase tracking-[0.4em] text-zinc-500">{displayName}</span>
-              <span className="text-sm font-semibold text-white">{description}</span>
+              <span className="text-sm font-semibold text-[color:var(--ui-text)]">{description}</span>
             </div>
           </div>
         )}

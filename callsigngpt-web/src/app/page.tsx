@@ -7,7 +7,6 @@ import { HttpClient } from '@/lib/httpClient';
 import { getApiBase } from '@/lib/apiBase';
 import { APP_CONFIG } from '@/config/uiText';
 
-import TopBar from '@/components/TopBar';
 import Sidebar from '@/components/Sidebar';
 import MessageBubble from '@/components/MessageBubble';
 import TypingIndicator from '@/components/TypingIndicator';
@@ -15,6 +14,7 @@ import SearchIndicator from '@/components/SearchIndicator';
 import Composer from '@/components/Composer';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import StatusDialog from '@/components/StatusDialog';
+import ModelPicker from '@/components/ModelPicker';
 
 import { useConversation } from '@/hooks/useConversation';
 import { useStreamingChat } from '@/hooks/useStreamingChat';
@@ -345,11 +345,18 @@ function HomeInner() {
     if (!authLoading && !session) router.replace('/login');
   }, [authLoading, session, router]);
 
-  if (authLoading) return <div className="min-h-screen bg-black" />;
+  if (authLoading) return <div className="min-h-screen bg-[color:var(--ui-bg)]" />;
   if (!session) return null;
 
   const safeMsgs = sanitizeMsgs(msgs);
   const hasAssistantReply = safeMsgs.some((m) => m.role === 'assistant' && (m.content || '').trim().length > 0);
+  const hasConversationContent = safeMsgs.some((m) => {
+    if (m.role !== 'user' && m.role !== 'assistant') return false;
+    const hasText = (m.content || '').trim().length > 0;
+    const hasAttachment = Boolean(m.attachment);
+    return hasText || hasAttachment;
+  });
+  const isEmptyConversation = !hasConversationContent;
 
   const handleNewChat = async () => {
     await saveCurrentChatIfNeeded();
@@ -364,19 +371,13 @@ function HomeInner() {
 
   // Layout
   return (
-    <main className="relative flex h-screen min-h-screen flex-col overflow-hidden px-4 py-4 text-zinc-100 sm:px-6 sm:py-5 md:px-8 md:py-6 lg:px-10 lg:py-6">
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute -left-24 top-[-140px] h-72 w-72 rounded-full bg-emerald-500/12 blur-[130px]" />
-        <div className="absolute right-[-90px] top-6 h-64 w-64 rounded-full bg-indigo-500/12 blur-[120px]" />
-        <div className="absolute -bottom-40 left-1/2 h-80 w-80 -translate-x-1/2 transform rounded-full bg-cyan-400/12 blur-[140px]" />
-      </div>
-
-      <div className="relative mx-auto flex w-full max-w-none flex-1 min-h-0 flex-col gap-5 sm:gap-6 lg:gap-8">
-        <div className="sticky top-2 sm:top-3 z-30 flex flex-wrap items-center gap-2 rounded-3xl border border-white/10 bg-black/40 px-3 py-2 backdrop-blur xl:hidden">
+    <main className="page-fade relative flex h-screen min-h-screen flex-col overflow-hidden px-2 py-2 sm:px-3 sm:py-3">
+      <div className="relative mx-auto flex w-full max-w-none flex-1 min-h-0 flex-col gap-3 sm:gap-3">
+        <div className="sticky top-2 sm:top-3 z-30 flex flex-wrap items-center gap-1.5 rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-2 py-1.5 shadow-sm xl:hidden">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
-            className="inline-flex items-center gap-2 rounded-2xl border border-white/20 bg-white/5 px-3.5 py-2 text-sm font-semibold text-white shadow-[0_12px_36px_rgba(2,6,23,.55)] transition hover:border-white/40 hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--ui-border)] bg-transparent px-3 py-1.5 text-sm font-medium text-[color:var(--ui-text)] transition hover:bg-white/5"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M4 6h16M4 12h12M4 18h16" />
@@ -386,7 +387,7 @@ function HomeInner() {
           <button
             type="button"
             onClick={handleNewChat}
-            className="inline-flex items-center gap-2 rounded-2xl accent-button px-3.5 py-2 text-sm font-semibold shadow-[0_12px_36px_rgba(2,6,23,.55)]"
+            className="inline-flex items-center gap-2 rounded-xl accent-button px-3 py-1.5 text-sm font-medium"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M12 5v14M5 12h14" />
@@ -395,7 +396,7 @@ function HomeInner() {
           </button>
         </div>
 
-        <div className="grid h-full min-h-0 gap-5 xl:grid-cols-[360px_minmax(0,1fr)] xl:items-start">
+        <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[15%_minmax(0,1fr)] xl:items-start">
           {sidebarOpen && (
             <div
               className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 xl:hidden"
@@ -404,11 +405,11 @@ function HomeInner() {
           )}
           <div
             className={[
-              'fixed inset-y-4 left-4 right-4 z-50 transition-all duration-200 xl:sticky xl:top-4 xl:z-10',
+              'fixed inset-y-2 left-2 right-2 z-50 transition-all duration-200 xl:sticky xl:top-3 xl:z-10',
               sidebarOpen
                 ? 'translate-x-0 opacity-100 pointer-events-auto'
                 : '-translate-x-[110%] opacity-0 pointer-events-none',
-              'xl:translate-x-0 xl:opacity-100 xl:pointer-events-auto xl:flex-shrink-0 xl:basis-[360px] xl:max-w-[400px] xl:h-[calc(100vh-2rem)] xl:-ml-1 xl:mr-3',
+              'xl:translate-x-0 xl:opacity-100 xl:pointer-events-auto xl:flex-shrink-0 xl:basis-[15%] xl:max-w-none xl:h-[calc(100vh-1.5rem)] xl:-ml-0.5 xl:mr-2',
             ].join(' ')}
           >
             <Sidebar
@@ -449,82 +450,103 @@ function HomeInner() {
             />
           </div>
 
-          {/* Right column - TopBar plus Chat area */}
-          <section className="flex min-w-0 min-h-0 flex-1 flex-col gap-4 sm:gap-5 xl:h-[calc(100vh-2rem)]">
-            <div className="glass-panel gradient-border rounded-[28px] border border-white/10 p-4 sm:p-6 shadow-[0_24px_100px_rgba(2,6,23,.65)]">
-              <TopBar model={model} setModel={setModelAndPersist} />
-            </div>
-
-            <div className="glass-panel gradient-border flex flex-1 min-h-0 flex-col overflow-hidden rounded-[30px] border border-white/10 p-3 sm:p-4 lg:p-5 shadow-[0_28px_110px_rgba(2,6,23,.7)]">
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[22px] border border-white/5 bg-white/5 relative">
+          {/* Right column - Chat area */}
+          <section className="flex min-w-0 min-h-0 flex-1 flex-col gap-3 xl:h-[calc(100vh-1.5rem)]">
+            <div className="glass-panel flex flex-1 min-h-0 flex-col overflow-hidden rounded-2xl p-2 sm:p-3">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] relative">
+                <div className="flex items-center gap-2 px-2 py-1.5">
+                  <ModelPicker value={model} onChange={setModelAndPersist} variant="inline" />
+                </div>
                 {loadingConversation && (
-                  <div className="absolute right-4 top-3 z-20 inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-zinc-200 shadow-sm">
+                  <div className="absolute right-4 top-3 z-20 inline-flex items-center gap-2 rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-[color:var(--ui-text-muted)]">
                     <span className="h-2 w-2 rounded-full bg-emerald-300 animate-pulse" />
                     Syncing...
                   </div>
                 )}
-                <div
-                  ref={scrollerRef}
-                  className="scroll-area flex-1 min-h-0 overflow-y-auto overflow-x-auto sm:overflow-x-hidden overscroll-contain px-3 py-5 sm:px-5 lg:px-8"
-                  style={{ WebkitOverflowScrolling: 'touch' }}
-                >
-                  <div className="flex w-full flex-col space-y-4 pb-24 sm:pb-28">
-                    {safeMsgs.map((m) => (
-                      <MessageBubble key={m.id} msg={m} />
-                    ))}
-                    {searching && <SearchIndicator query={searchQuery} />}
-                    {loading && <TypingIndicator />}
-                    <div
-                      className={[
-                        'sticky bottom-1 flex justify-end transition-opacity duration-300 ease-out',
-                        hasPendingScroll ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
-                      ].join(' ')}
-                      style={{ paddingRight: 0, transform: 'translate(6px, 6px)' }}
-                    >
-                      <button
-                        type="button"
-                        className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-black/80 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_20px_60px_rgba(2,6,23,.6)] backdrop-blur transition hover:border-white/30 hover:bg-black/85"
-                        onClick={() => {
-                          setHasPendingScroll(false);
-                          scrollerRef.current?.scrollTo({
-                            top: scrollerRef.current.scrollHeight,
-                            behavior: 'smooth',
-                          });
-                        }}
-                      >
-                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                          <path d="M12 5v14m0 0 5-5m-5 5-5-5" />
-                        </svg>
-                        Jump to present
-                      </button>
+                {isEmptyConversation ? (
+                  <div className="flex flex-1 flex-col items-center justify-center px-2 py-4">
+                    <div className="flex w-full max-w-xl flex-col items-center gap-4">
+                      <h2 className="text-center text-2xl font-medium tracking-tight text-[color:var(--ui-text)]">
+                        What can I help with?
+                      </h2>
+                      <div className="w-full">
+                        <Composer
+                          disabled={loading}
+                          showStop={loading}
+                          onStop={stop}
+                          onSend={async ({ text, attachment }) => {
+                            await send({ text, attachment });
+                          }}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-
-                <div className="border-t border-white/5 px-2 py-3 sm:px-4 sm:py-4 space-y-3">
-                  {!loading && interrupted && hasAssistantReply && (
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={() => send({ text: 'Continue' })}
-                        className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3.5 py-2 text-xs font-semibold text-white shadow-[0_12px_36px_rgba(2,6,23,.55)] transition hover:border-white/30 hover:bg-white/15"
-                      >
-                        <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
-                          <path d="M5 12h14m0 0-6-5m6 5-6 5" />
-                        </svg>
-                        Continue response
-                      </button>
+                ) : (
+                  <>
+                    <div
+                      ref={scrollerRef}
+                      className="scroll-area flex-1 min-h-0 overflow-y-auto overflow-x-auto sm:overflow-x-hidden overscroll-contain px-2 py-3 sm:px-3 sm:py-3"
+                      style={{ WebkitOverflowScrolling: 'touch' }}
+                    >
+                      <div className="flex w-full flex-col space-y-3 pb-10 sm:pb-12">
+                        {safeMsgs.map((m) => (
+                          <MessageBubble key={m.id} msg={m} />
+                        ))}
+                        {searching && <SearchIndicator query={searchQuery} />}
+                        {loading && <TypingIndicator />}
+                        <div
+                          className={[
+                            'sticky bottom-1 flex justify-end transition-opacity duration-300 ease-out',
+                            hasPendingScroll ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
+                          ].join(' ')}
+                          style={{ paddingRight: 0, transform: 'translate(6px, 6px)' }}
+                        >
+                          <button
+                            type="button"
+                            className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3 py-1.5 text-xs font-medium text-[color:var(--ui-text)] transition hover:bg-white/5"
+                            onClick={() => {
+                              setHasPendingScroll(false);
+                              scrollerRef.current?.scrollTo({
+                                top: scrollerRef.current.scrollHeight,
+                                behavior: 'smooth',
+                              });
+                            }}
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                              <path d="M12 5v14m0 0 5-5m-5 5-5-5" />
+                            </svg>
+                            Jump to present
+                          </button>
+                        </div>
+                      </div>
                     </div>
-                  )}
-                  <Composer
-                    disabled={loading}
-                    showStop={loading}
-                    onStop={stop}
-                    onSend={async ({ text, attachment }) => {
-                      await send({ text, attachment });
-                    }}
-                  />
-                </div>
+
+                    <div className="border-t border-[color:var(--ui-border)] px-2 py-2 sm:px-3 sm:py-3 space-y-2">
+                      {!loading && interrupted && hasAssistantReply && (
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => send({ text: 'Continue' })}
+                            className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3 py-1.5 text-xs font-medium text-[color:var(--ui-text)] transition hover:bg-white/5"
+                          >
+                            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                              <path d="M5 12h14m0 0-6-5m6 5-6 5" />
+                            </svg>
+                            Continue response
+                          </button>
+                        </div>
+                      )}
+                      <Composer
+                        disabled={loading}
+                        showStop={loading}
+                        onStop={stop}
+                        onSend={async ({ text, attachment }) => {
+                          await send({ text, attachment });
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </section>
@@ -567,7 +589,7 @@ function HomeInner() {
 
 export default function Home() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-black" />}>
+    <Suspense fallback={<div className="min-h-screen bg-[color:var(--ui-bg)]" />}>
       <HomeInner />
     </Suspense>
   );

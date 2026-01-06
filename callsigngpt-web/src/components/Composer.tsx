@@ -114,47 +114,47 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
 
   return (
     <div className="shrink-0 pb-[env(safe-area-inset-bottom)]">
-      <div className="mx-auto w-full max-w-none px-2 sm:px-3 lg:px-4">
+      <div className="mx-auto w-full max-w-none px-1.5 sm:px-2">
         <form
           onSubmit={(e) => {
             e.preventDefault();
             void handleSend();
           }}
-          className="flex flex-col gap-3 rounded-[28px] border border-white/10 bg-black/60 px-4 py-4 shadow-[0_25px_80px_rgba(2,6,23,.65)] backdrop-blur-xl transition-all duration-200 focus-within:border-white/30 focus-within:shadow-[0_30px_90px_rgba(2,6,23,.8)]"
+          className="flex flex-col gap-2 rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-input)] px-3 py-2 shadow-sm transition focus-within:border-[color:var(--ui-accent)]"
         >
           {error && (
-            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100">
+            <div className="rounded-2xl border border-red-500/40 bg-red-500/10 px-2.5 py-1.5 text-sm text-red-100">
               {error}
             </div>
           )}
           {attachment && (
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-white/20 bg-white/5 px-3 py-2">
+            <div className="flex items-center justify-between gap-3 rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] px-2.5 py-1.5">
               <div className="flex flex-1 items-center gap-3">
                 {attachment.type === "image" ? (
                   <img
                     src={attachment.src}
                     alt={attachment.name}
-                    className="h-16 w-16 rounded-xl object-contain"
+                    className="h-14 w-14 rounded-xl object-contain"
                   />
                 ) : (
-                  <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-white/10">
-                    <svg viewBox="0 0 24 24" className="h-8 w-8 text-white/70" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-[color:var(--ui-surface-alt)]">
+                    <svg viewBox="0 0 24 24" className="h-8 w-8 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="1.5">
                       <path d="M6 3h9l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
                       <path d="M14 3v6h6" />
                     </svg>
                   </div>
                 )}
                 <div className="flex flex-col gap-1">
-                  <p className="text-sm font-medium text-white">{attachment.name}</p>
+                  <p className="text-sm font-medium text-[color:var(--ui-text)]">{attachment.name}</p>
                   <p className="text-xs text-zinc-400">
-                    {attachment.mime} · {formatSize(attachment.size)}
+                    {attachment.mime} - {formatSize(attachment.size)}
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={clearAttachment}
-                className="rounded-full border border-white/30 bg-white/5 p-2 text-white transition hover:border-white/60 hover:bg-white/10"
+                className="rounded-full border border-[color:var(--ui-border)] bg-transparent p-2 text-[color:var(--ui-text)] transition hover:bg-white/5"
                 aria-label="Remove attachment"
               >
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
@@ -164,16 +164,16 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
             </div>
           )}
 
-          <div className="flex items-end gap-3">
+          <div className="flex items-end gap-2">
             <textarea
               ref={inputRef}
               className="
                 composer-input scroll-area
-                flex-1 min-h-[48px] max-h-[200px]
-                rounded-2xl bg-transparent text-white
-                px-3 py-3 leading-6 text-[16px] sm:text-base
+                flex-1 min-h-[42px] max-h-[200px]
+                rounded-2xl bg-transparent text-[color:var(--ui-text)]
+                px-2.5 py-2 leading-6 text-[16px] sm:text-base
                 outline-none resize-none
-                placeholder:text-zinc-500
+                placeholder:text-[color:var(--ui-text-subtle)]
                 overflow-x-hidden
               "
               placeholder={UI_TEXT.composer.placeholder}
@@ -195,7 +195,7 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled}
-                className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/10 text-white transition-all duration-200 hover:border-white/40 hover:bg-white/20 hover:-translate-y-0.5"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ui-border)] bg-transparent text-[color:var(--ui-text)] transition hover:bg-white/5"
                 aria-label="Attach file (images/files supported on select models)"
                 title="Attach file (images/files supported on select models)"
               >
@@ -214,7 +214,7 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
                 <button
                   type="button"
                   onClick={onStop}
-                  className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 text-white transition-all duration-200 hover:border-white/40 hover:bg-white/10 hover:-translate-y-0.5"
+                  className="flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ui-border)] text-[color:var(--ui-text)] transition hover:bg-white/5"
                   aria-label={UI_TEXT.composer.stopTitle}
                   title={UI_TEXT.composer.stopTitle}
                 >
@@ -226,7 +226,7 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
 
               <button
                 type="submit"
-                className="flex h-12 w-12 items-center justify-center rounded-2xl accent-button disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex h-10 w-10 items-center justify-center rounded-xl accent-button disabled:opacity-60 disabled:cursor-not-allowed"
                 aria-label={UI_TEXT.composer.sendTitle}
                 title={UI_TEXT.composer.sendTitle}
                 disabled={disabled}
