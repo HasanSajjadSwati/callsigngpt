@@ -371,9 +371,9 @@ function HomeInner() {
 
   // Layout
   return (
-    <main className="page-fade relative flex h-screen min-h-screen flex-col overflow-hidden px-2 py-2 sm:px-3 sm:py-3">
+    <main className="page-fade relative flex h-screen min-h-screen flex-col overflow-hidden p-0">
       <div className="relative mx-auto flex w-full max-w-none flex-1 min-h-0 flex-col gap-3 sm:gap-3">
-        <div className="sticky top-2 sm:top-3 z-30 flex flex-wrap items-center gap-1.5 rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-2 py-1.5 shadow-sm xl:hidden">
+        <div className="sticky top-0 z-30 flex flex-wrap items-center gap-1.5 rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-2 py-1.5 shadow-sm xl:hidden">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
@@ -396,7 +396,7 @@ function HomeInner() {
           </button>
         </div>
 
-        <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[15%_minmax(0,1fr)] xl:items-start">
+        <div className="grid h-full min-h-0 gap-3 xl:gap-0 xl:grid-cols-[20%_minmax(0,1fr)] xl:items-start">
           {sidebarOpen && (
             <div
               className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm transition-opacity duration-200 xl:hidden"
@@ -405,11 +405,11 @@ function HomeInner() {
           )}
           <div
             className={[
-              'fixed inset-y-2 left-2 right-2 z-50 transition-all duration-200 xl:sticky xl:top-3 xl:z-10',
+              'fixed inset-0 z-50 transition-all duration-200 xl:sticky xl:top-0 xl:z-10',
               sidebarOpen
                 ? 'translate-x-0 opacity-100 pointer-events-auto'
                 : '-translate-x-[110%] opacity-0 pointer-events-none',
-              'xl:translate-x-0 xl:opacity-100 xl:pointer-events-auto xl:flex-shrink-0 xl:basis-[15%] xl:max-w-none xl:h-[calc(100vh-1.5rem)] xl:-ml-0.5 xl:mr-2',
+              'xl:translate-x-0 xl:opacity-100 xl:pointer-events-auto xl:flex-shrink-0 xl:basis-[20%] xl:max-w-none xl:h-screen',
             ].join(' ')}
           >
             <Sidebar
@@ -451,9 +451,9 @@ function HomeInner() {
           </div>
 
           {/* Right column - Chat area */}
-          <section className="flex min-w-0 min-h-0 flex-1 flex-col gap-3 xl:h-[calc(100vh-1.5rem)]">
-            <div className="glass-panel flex flex-1 min-h-0 flex-col overflow-hidden rounded-2xl p-2 sm:p-3">
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] relative">
+          <section className="flex min-w-0 min-h-0 flex-1 flex-col gap-3 xl:h-screen">
+            <div className="flex flex-1 min-h-0 flex-col overflow-hidden bg-[color:var(--ui-surface-alt)]">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-[color:var(--ui-surface-alt)] relative">
                 <div className="flex items-center gap-2 px-2 py-1.5">
                   <ModelPicker value={model} onChange={setModelAndPersist} variant="inline" />
                 </div>

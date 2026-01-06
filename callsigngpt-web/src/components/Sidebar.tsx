@@ -348,7 +348,7 @@ export default function Sidebar({
 
   return (
     <>
-      <aside className="w-full min-w-0 shrink-0 h-full flex flex-col glass-panel rounded-2xl px-3 py-3">
+      <aside className="w-full min-w-0 shrink-0 h-full flex flex-col glass-panel panel-flush-right panel-edge px-3 py-3">
       <div className="mb-2 flex justify-end xl:hidden">
         {onClose && (
           <button

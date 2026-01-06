@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import TopBar from '@/components/TopBar';
 import { useAuth } from '@/lib/auth';
 import { normalizePhoneInput } from '@/lib/phone';
 import { COUNTRY_OPTIONS } from '@/lib/countries';
@@ -106,14 +105,19 @@ export default function SignupPage() {
       </div>
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 sm:gap-8 lg:gap-8">
-        <TopBar showLogo />
         <div className="grid gap-6 md:grid-cols-[1.08fr_0.92fr] md:items-start lg:items-stretch lg:gap-8 xl:gap-12 lg:h-full">
           <section className="glass-panel gradient-border relative order-2 overflow-hidden rounded-[32px] border border-white/10 p-6 shadow-[0_30px_120px_rgba(2,6,23,.6)] sm:p-8 md:order-1 lg:h-full">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(236,72,153,0.16),transparent_38%),radial-gradient(circle_at_88%_0%,rgba(94,92,255,0.14),transparent_40%),radial-gradient(circle_at_45%_110%,rgba(255,160,122,0.12),transparent_30%)]" />
             <div className="relative flex flex-col gap-6">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-2 text-left">
+                <div className="space-y-3 text-left">
                   <p className="text-[11px] uppercase tracking-[0.35em] text-pink-100/90">Create workspace</p>
+                  <img
+                    src="/callsign-logo.svg"
+                    alt="CallSignGPT"
+                    className="h-16 w-16 opacity-80"
+                    draggable={false}
+                  />
                   <h1 className="text-2xl font-semibold leading-tight text-white sm:text-3xl md:text-4xl">
                     Build faster with multi-model workflows in one sleek interface.
                   </h1>

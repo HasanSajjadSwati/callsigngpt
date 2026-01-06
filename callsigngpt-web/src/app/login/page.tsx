@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import TopBar from '@/components/TopBar';
 import StatusDialog from '@/components/StatusDialog';
 import { GoogleAuthButton } from '@/components/GoogleAuthButton';
 
@@ -57,24 +56,25 @@ export default function LoginPage() {
       </div>
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6 sm:gap-8 lg:gap-10">
-        <TopBar showLogo showStatusBadge={false} />
         <div className="grid gap-6 md:grid-cols-[1.05fr_0.95fr] md:items-start lg:gap-8 xl:gap-12">
           <section className="glass-panel gradient-border relative order-2 overflow-hidden rounded-[32px] border border-white/10 p-6 shadow-[0_30px_120px_rgba(2,6,23,.6)] sm:p-8 md:order-1">
             <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_15%,rgba(16,185,129,0.12),transparent_40%),radial-gradient(circle_at_85%_0%,rgba(14,165,233,0.12),transparent_40%),radial-gradient(circle_at_50%_110%,rgba(37,99,235,0.08),transparent_35%)]" />
             <div className="relative flex flex-col gap-6">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="space-y-2 text-left">
+              <div className="flex flex-col gap-4">
+                <div className="space-y-3 text-left sm:max-w-[36rem]">
                   <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-200/80">CallSignGPT</p>
+                  <img
+                    src="/callsign-logo.svg"
+                    alt="CallSignGPT"
+                    className="h-16 w-16 opacity-80"
+                    draggable={false}
+                  />
                   <h1 className="text-2xl font-semibold leading-tight text-white sm:text-3xl md:text-4xl">
                     Sign in to pick up right where you left off.
                   </h1>
                   <p className="text-sm text-zinc-400 sm:text-base">
                     Access conversations, manage your workspace, and explore every model from a single canvas.
                   </p>
-                </div>
-                <div className="flex items-center gap-5 self-start rounded-full border border-emerald-300/20 bg-emerald-300/10 px-5 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-50 shadow-inner">
-                  <span className="h-2 w-3 rounded-full bg-emerald-400 shadow-[0_0_0_6px_rgba(16,185,129,0.15)]" />
-                  Live sync
                 </div>
               </div>
 

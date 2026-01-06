@@ -90,6 +90,28 @@ select option {
   box-shadow: var(--ui-shadow);
 }
 
+@media (min-width: 1280px) {
+  .panel-flush-left {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left-width: 0;
+    box-shadow: none;
+  }
+
+  .panel-flush-right {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-right-width: 0;
+    box-shadow: none;
+  }
+}
+
+.panel-edge {
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
 .gradient-border {
   position: relative;
 }
