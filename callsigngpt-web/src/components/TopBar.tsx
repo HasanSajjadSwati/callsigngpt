@@ -60,11 +60,11 @@ export default function TopBar({ model, setModel, showLogo = false, showStatusBa
         {showLogo && !isChatPage ? (
           <div className="flex w-full flex-col gap-3">
             <div className="flex items-center gap-2 sm:gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)]">
+              <div className="grid h-10 w-10 place-items-center rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] p-2">
                 <img
-                  src="/callsign-logo.svg"
+                  src="/logo.png"
                   alt="CallSignGPT logo"
-                  className="h-6 w-6 opacity-95"
+                  className="h-full w-full object-contain opacity-95"
                   draggable={false}
                 />
               </div>
@@ -100,11 +100,11 @@ export default function TopBar({ model, setModel, showLogo = false, showStatusBa
         ) : (
           <div className="flex items-center gap-2 sm:gap-3">
             {showLogo && (
-              <div className="grid h-9 w-9 place-items-center rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)]">
+              <div className="grid h-9 w-9 place-items-center rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] p-2">
                 <img
-                  src="/callsign-logo.svg"
+                  src="/logo.png"
                   alt="CallSignGPT logo"
-                  className="h-5 w-5 opacity-95"
+                  className="h-full w-full object-contain opacity-95"
                   draggable={false}
                 />
               </div>

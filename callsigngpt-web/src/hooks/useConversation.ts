@@ -33,7 +33,7 @@ type UseConversationReturn = {
   ensureConversation: () => Promise<void>;
   appendMessages: (...newMessages: UIMsg[]) => Promise<void>;
   saveCurrentChatIfNeeded: () => Promise<void>;
-  resetToNewChat: () => void;
+  resetToNewChat: (folderId?: string | null) => void;
   loadingConversation: boolean;
 };
 export function useConversation(
@@ -99,6 +99,7 @@ export function useConversation(
   const isCreatingConversation = useRef(false);
   const pendingConversationId = useRef<string | null>(null); // Track conversation being created
   const lastFailedConversationId = useRef<string | null>(null); // Prevent hammering missing IDs
+  const pendingFolderIdRef = useRef<string | null>(null);
 
   const clearConversationQuery = useCallback(
     (expectedId?: string | null) => {
@@ -117,6 +118,7 @@ export function useConversation(
     isCreatingConversation.current = false;
     setConversationId(null);
     pendingConversationId.current = null;
+    pendingFolderIdRef.current = null;
     setMsgs(withTimestamps([greetingFnRef.current()]));
   }, []);
 
@@ -343,13 +345,18 @@ export function useConversation(
         firstUser?.content?.slice(0, APP_CONFIG.conversation.maxTitleLength) ||
         UI_TEXT.app.newChatTitle;
 
+      const pendingFolderId = pendingFolderIdRef.current;
       const createLocal = async () => {
         try {
+          const payload: Record<string, any> = { title, model, messages: currentMsgs };
+          if (pendingFolderId) {
+            payload.folderId = pendingFolderId;
+          }
           const res = await fetch(`/api/conversations`, {
             method: 'POST',
             credentials: apiCredentials,
             headers: { 'Content-Type': 'application/json', ...authHeaders } as HeadersInit,
-            body: JSON.stringify({ title, model, messages: currentMsgs }),
+            body: JSON.stringify(payload),
           });
           if (res.ok) {
             const data = await res.json();
@@ -364,7 +371,11 @@ export function useConversation(
       const createExternal = async () => {
         if (!authedClient) return undefined;
         try {
-          const data = await authedClient.post(`/conversations`, { title, model, messages: currentMsgs });
+          const payload: Record<string, any> = { title, model, messages: currentMsgs };
+          if (pendingFolderId) {
+            payload.folderId = pendingFolderId;
+          }
+          const data = await authedClient.post(`/conversations`, payload);
           const convo = extractConversation(data);
           return convo?.id;
         } catch (err) {
@@ -378,6 +389,7 @@ export function useConversation(
       if (newId) {
         createdOnServer.current = true;
         pendingConversationId.current = newId;
+        pendingFolderIdRef.current = null;
         
         setConversationId(newId);
 
@@ -510,12 +522,16 @@ export function useConversation(
   }, [conversationId, msgs, sendConversationPatch]);
 
   /** Reset local chat */
-  const resetToNewChat = useCallback(() => {
-    resetLocal();
-    const url = new URL(window.location.href);
-    url.searchParams.delete('c');
-    router.replace(`${url.pathname}${url.search}`);
-  }, [router, resetLocal]);
+  const resetToNewChat = useCallback(
+    (folderId?: string | null) => {
+      resetLocal();
+      pendingFolderIdRef.current = folderId ?? null;
+      const url = new URL(window.location.href);
+      url.searchParams.delete('c');
+      router.replace(`${url.pathname}${url.search}`);
+    },
+    [router, resetLocal],
+  );
 
   return {
     msgs,

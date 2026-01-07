@@ -64,9 +64,9 @@ export default function LoginPage() {
                 <div className="space-y-3 text-left sm:max-w-[36rem]">
                   <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-200/80">CallSignGPT</p>
                   <img
-                    src="/callsign-logo.svg"
+                    src="/logo.png"
                     alt="CallSignGPT"
-                    className="h-16 w-16 opacity-80"
+                    className="h-auto w-[clamp(4rem,9vw,5rem)] object-contain opacity-90"
                     draggable={false}
                   />
                   <h1 className="text-2xl font-semibold leading-tight text-white sm:text-3xl md:text-4xl">

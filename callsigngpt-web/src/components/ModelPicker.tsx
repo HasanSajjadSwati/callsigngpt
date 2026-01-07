@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { modelCache } from '@/lib/modelCache';
 
 export type ModelPickerProps = {
@@ -24,10 +25,16 @@ type Option = {
 
 export default function ModelPicker({ value, onChange, variant = 'default' }: ModelPickerProps) {
   const [options, setOptions] = useState<Option[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [open, setOpen] = useState(false);
   const isInline = variant === 'inline';
+  const containerRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuStyle, setMenuStyle] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     (async () => {
       try {
         const data: ApiModel[] = await modelCache.list();
@@ -47,12 +54,151 @@ export default function ModelPicker({ value, onChange, variant = 'default' }: Mo
       } catch (err) {
         console.error('Failed to load models', err);
         setOptions([]);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
   }, [onChange, value]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const handlePointer = (event: MouseEvent) => {
+      if (!containerRef.current) return;
+      if (
+        !containerRef.current.contains(event.target as Node) &&
+        !menuRef.current?.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    };
+
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setMenuStyle(null);
+      return;
+    }
+
+    const updateMenuPosition = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const viewportPadding = 12;
+      const maxWidth = Math.max(0, window.innerWidth - viewportPadding * 2);
+      const minWidth = isInline ? 240 : 220;
+      const widthBase = isInline ? 320 : rect.width;
+      const clampedMin = Math.min(minWidth, maxWidth);
+      const width = Math.max(clampedMin, Math.min(widthBase, maxWidth));
+      let left = rect.left;
+
+      if (left + width > window.innerWidth - viewportPadding) {
+        left = window.innerWidth - viewportPadding - width;
+      }
+      if (left < viewportPadding) {
+        left = viewportPadding;
+      }
+
+      const top = rect.bottom + 8;
+      setMenuStyle({ top, left, width });
+    };
+
+    updateMenuPosition();
+    window.addEventListener('resize', updateMenuPosition);
+    window.addEventListener('scroll', updateMenuPosition, true);
+    return () => {
+      window.removeEventListener('resize', updateMenuPosition);
+      window.removeEventListener('scroll', updateMenuPosition, true);
+    };
+  }, [open, isInline]);
+
+  const selected = options.find((opt) => opt.key === value) ?? options[0];
+  const buttonLabel = selected?.label ?? (loading ? 'Loading models' : 'Select model');
+  const buttonDescription = !isInline ? selected?.description : undefined;
+
+  const menu =
+    open && menuStyle ? (
+      <div
+        ref={menuRef}
+        role="listbox"
+        style={menuStyle}
+        className="fixed z-50 overflow-hidden rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] shadow-[var(--ui-shadow)]"
+      >
+        {options.length > 0 ? (
+          <>
+            <div className="px-3 pt-3 pb-2 text-[10px] uppercase tracking-[0.35em] text-[color:var(--ui-text-subtle)]">
+              Models
+            </div>
+            <ul className="max-h-80 overflow-auto px-2 pb-2">
+              {options.map((opt) => {
+                const isSelected = opt.key === value;
+                return (
+                  <li key={opt.key}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      onClick={() => {
+                        onChange(opt.key);
+                        setOpen(false);
+                      }}
+                      className={[
+                        'group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ui-accent)]',
+                        isSelected
+                          ? 'bg-[color:var(--ui-surface-alt)] text-[color:var(--ui-text)]'
+                          : 'text-[color:var(--ui-text)] hover:bg-white/5',
+                      ].join(' ')}
+                    >
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-sm font-medium">{opt.label}</span>
+                        {opt.description && (
+                          <span className="truncate text-xs text-[color:var(--ui-text-muted)]">
+                            {opt.description}
+                          </span>
+                        )}
+                      </span>
+                      <svg
+                        viewBox="0 0 24 24"
+                        className={[
+                          'h-4 w-4 flex-shrink-0 text-[color:var(--ui-text)] transition-opacity',
+                          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-40',
+                        ].join(' ')}
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                      >
+                        <path d="M5 13l4 4L19 7" />
+                      </svg>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        ) : (
+          <div className="px-4 py-3 text-sm text-[color:var(--ui-text-muted)]">
+            {loading ? 'Loading models...' : 'No models available.'}
+          </div>
+        )}
+      </div>
+    ) : null;
 
   return (
     <div
@@ -62,41 +208,51 @@ export default function ModelPicker({ value, onChange, variant = 'default' }: Mo
           : 'flex w-full flex-col gap-1 text-[color:var(--ui-text)]'
       }
     >
-      <div className={isInline ? 'flex items-center gap-2' : 'flex flex-wrap items-center gap-1.5 sm:gap-2'}>
+      <div className={isInline ? 'flex items-center gap-2' : 'flex flex-wrap items-center gap-2'}>
         {!isInline && (
-          <span className="min-w-[60px] text-[10px] uppercase tracking-[0.35em] text-zinc-500">Model</span>
+          <span className="min-w-[60px] text-[10px] uppercase tracking-[0.35em] text-[color:var(--ui-text-subtle)]">
+            Model
+          </span>
         )}
-        <div className={isInline ? 'relative w-auto max-w-full min-w-[160px]' : 'relative flex-1 min-w-[180px] sm:min-w-[240px]'}>
-          <select
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            className={
+        <div
+          ref={containerRef}
+          className={isInline ? 'relative w-auto max-w-full min-w-[160px]' : 'relative flex-1 min-w-[200px]'}
+        >
+          <button
+            type="button"
+            aria-haspopup="listbox"
+            aria-expanded={open}
+            onClick={() => setOpen((prev) => !prev)}
+            className={[
+              'group inline-flex w-full items-center justify-between gap-3 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ui-accent)]',
               isInline
-                ? 'appearance-none w-full rounded-full border border-transparent bg-transparent px-3 pr-8 py-1.5 text-left text-sm font-medium text-[color:var(--ui-text)] transition hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-[color:var(--ui-accent)]'
-                : 'appearance-none w-full max-w-full rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-input)] px-3 pr-9 py-2 text-left text-sm font-medium text-[color:var(--ui-text)] focus:outline-none focus:ring-2 focus:ring-[color:var(--ui-accent)]'
-            }
+                ? 'rounded-full border border-transparent bg-transparent px-2.5 py-1.5 text-sm font-semibold text-[color:var(--ui-text)] hover:bg-white/5 sm:text-base'
+                : 'rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3 py-2 text-sm font-medium text-[color:var(--ui-text)] shadow-[var(--ui-shadow-soft)] hover:bg-[color:var(--ui-surface-alt)]',
+              open && !isInline ? 'ring-1 ring-[color:var(--ui-border-strong)]' : '',
+            ].join(' ')}
           >
-            {options.map((opt) => (
-              <option key={opt.key} value={opt.key} title={opt.description} className="text-[color:var(--ui-text)]">
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <svg
-            viewBox="0 0 24 24"
-            className={
-              isInline
-                ? 'pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400'
-                : 'pointer-events-none absolute right-4 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400'
-            }
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
+            <span className="flex min-w-0 flex-1 flex-col text-left">
+              <span className="truncate">{buttonLabel}</span>
+              {buttonDescription && (
+                <span className="truncate text-xs text-[color:var(--ui-text-muted)]">{buttonDescription}</span>
+              )}
+            </span>
+            <svg
+              viewBox="0 0 24 24"
+              className={[
+                'h-4 w-4 flex-shrink-0 text-[color:var(--ui-text-muted)] transition-transform',
+                open ? 'rotate-180' : '',
+              ].join(' ')}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </button>
         </div>
       </div>
+      {open && typeof document !== 'undefined' && menuStyle ? createPortal(menu, document.body) : null}
     </div>
   );
 }

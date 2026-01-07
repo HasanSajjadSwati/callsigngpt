@@ -10,6 +10,15 @@ const getBearerToken = (req: Request) => {
   const auth = req.headers.get('authorization') || '';
   return auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
 };
+async function ensureFolderAccess(sb: any, userId: string, folderId: string) {
+  const { data, error } = await sb
+    .from('conversation_folders')
+    .select('id,user_id')
+    .eq('id', folderId)
+    .single();
+  if (error || !data) return false;
+  return data.user_id === userId;
+}
 
 function deriveTitle(messages: AnyMessage[] | undefined, fallback = UI_TEXT.app.newChatTitle) {
   if (!Array.isArray(messages)) return fallback;
@@ -49,7 +58,7 @@ export async function GET(
 
   const { data, error } = await sb
     .from('conversations')
-    .select('id,title,model,messages,updated_at,created_at,user_id')
+    .select('id,title,model,folder_id,messages,updated_at,created_at,user_id')
     .eq('id', id)
     .single();
 
@@ -76,6 +85,9 @@ export async function PATCH(
   const updates: Record<string, any> = {};
   const providedTitle = typeof body.title === 'string' ? body.title : undefined;
   const messagesFromBody: AnyMessage[] | undefined = Array.isArray(body.messages) ? body.messages : undefined;
+  const hasFolderKey = 'folderId' in body || 'folder_id' in body;
+  const rawFolderId = body.folderId ?? body.folder_id;
+  const folderId = typeof rawFolderId === 'string' ? rawFolderId.trim() : rawFolderId;
   if (messagesFromBody) updates.messages = messagesFromBody;
   if ('model' in body) updates.model = body.model;
 
@@ -96,6 +108,15 @@ export async function PATCH(
     (!existing.title || existing.title.toLowerCase() === PLACEHOLDER_TITLE)
   ) {
     updates.title = pickTitle(undefined, messagesFromBody, existing.title ?? UI_TEXT.app.newChatTitle);
+  }
+  if (hasFolderKey) {
+    if (typeof folderId === 'string' && folderId) {
+      const ok = await ensureFolderAccess(sb, user.id, folderId);
+      if (!ok) return NextResponse.json({ error: 'Invalid folder' }, { status: 400 });
+      updates.folder_id = folderId;
+    } else {
+      updates.folder_id = null;
+    }
   }
 
   const { error: updErr } = await sb

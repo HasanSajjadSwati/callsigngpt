@@ -358,9 +358,9 @@ function HomeInner() {
   });
   const isEmptyConversation = !hasConversationContent;
 
-  const handleNewChat = async () => {
+  const handleNewChat = async (folderId?: string | null) => {
     await saveCurrentChatIfNeeded();
-    resetToNewChat();
+    resetToNewChat(folderId);
     setSidebarOpen(false);
   };
 
@@ -386,8 +386,8 @@ function HomeInner() {
           </button>
           <button
             type="button"
-            onClick={handleNewChat}
-            className="inline-flex items-center gap-2 rounded-xl accent-button px-3 py-1.5 text-sm font-medium"
+            onClick={() => handleNewChat()}
+            className="inline-flex items-center gap-2 rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3.5 py-2 text-sm font-medium text-[color:var(--ui-text)] transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ui-accent)]"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
               <path d="M12 5v14M5 12h14" />
@@ -416,10 +416,14 @@ function HomeInner() {
               currentId={conversationId}
               reloadKey={sidebarReloadKey}
               onNewChat={handleNewChat}
+              onNewChatInFolder={(folderId) => handleNewChat(folderId)}
               onSelect={handleSelectChat}
               onClose={() => setSidebarOpen(false)}
               onRename={async (id, newTitle) => {
                 await patchConversation(id, { title: newTitle });
+              }}
+              onMoveFolder={async (id, folderId) => {
+                await patchConversation(id, { folderId });
               }}
               onDelete={async (id) => {
                 return new Promise<void>((resolve, reject) => {

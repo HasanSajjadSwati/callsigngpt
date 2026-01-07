@@ -12,6 +12,15 @@ const getBearerToken = (req: Request) => {
   const auth = req.headers.get('authorization') || '';
   return auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
 };
+async function ensureFolderAccess(sb: any, userId: string, folderId: string) {
+  const { data, error } = await sb
+    .from('conversation_folders')
+    .select('id,user_id')
+    .eq('id', folderId)
+    .single();
+  if (error || !data) return false;
+  return data.user_id === userId;
+}
 
 function deriveTitle(
   messages: AnyMessage[] | undefined,
@@ -52,7 +61,7 @@ export async function GET(req: Request) {
 
   const { data, error } = await sb
     .from('conversations')
-    .select('id,title,model,updated_at,created_at')
+    .select('id,title,model,folder_id,updated_at,created_at')
     .eq('user_id', user.id)
     .order('updated_at', { ascending: false });
 
@@ -77,6 +86,8 @@ export async function POST(req: Request) {
   const bodySchema = z.object({
     title: z.string().optional(),
     model: z.string().trim().max(200).optional(),
+    folderId: z.string().uuid().nullable().optional(),
+    folder_id: z.string().uuid().nullable().optional(),
     messages: z
       .array(
         z.object({
@@ -96,6 +107,14 @@ export async function POST(req: Request) {
   }
 
   const { title, model, messages = [] } = parsed.data;
+  const rawFolderId = parsed.data.folderId ?? parsed.data.folder_id;
+  const folderId = typeof rawFolderId === 'string' ? rawFolderId.trim() : rawFolderId;
+  if (typeof folderId === 'string' && folderId) {
+    const ok = await ensureFolderAccess(sb, user.id, folderId);
+    if (!ok) {
+      return NextResponse.json({ error: 'Invalid folder' }, { status: 400 });
+    }
+  }
   const normalizedMessages: AnyMessage[] = Array.isArray(messages)
     ? messages.map((m) => ({
         role: (m.role ?? '').toString().slice(0, 20),
@@ -107,15 +126,20 @@ export async function POST(req: Request) {
     normalizedMessages,
   );
 
+  const insertPayload: Record<string, any> = {
+    user_id: user.id,
+    title: finalTitle,
+    model,
+    messages: normalizedMessages,
+  };
+  if (rawFolderId !== undefined) {
+    insertPayload.folder_id = folderId || null;
+  }
+
   const { data, error } = await sb
     .from('conversations')
-    .insert({
-      user_id: user.id,
-      title: finalTitle,
-      model,
-      messages: normalizedMessages,
-    })
-    .select('id,title,model,updated_at,created_at')
+    .insert(insertPayload)
+    .select('id,title,model,folder_id,updated_at,created_at')
     .single();
 
   if (error) {
