@@ -48,7 +48,7 @@ export default function LoginPage() {
   }, [loading, session, router]);
 
   return (
-    <main className="relative min-h-screen overflow-hidden px-4 py-8 text-zinc-100 sm:px-6 md:px-8 lg:px-14 lg:py-12">
+    <main className="relative min-h-screen flex flex-col overflow-hidden px-4 py-8 text-zinc-100 sm:px-6 md:px-8 lg:px-14 lg:py-12">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-16 -top-24 h-64 w-64 rounded-full bg-emerald-500/15 blur-[120px]" />
         <div className="absolute right-[-60px] top-10 h-56 w-56 rounded-full bg-indigo-500/12 blur-[120px]" />
@@ -200,6 +200,16 @@ export default function LoginPage() {
           </section>
         </div>
       </div>
+      <footer className="relative mt-auto pt-6 text-center">
+        <a
+          href="https://strativ.io/"
+          target="_blank"
+          rel="noreferrer"
+          className="text-[11px] text-zinc-400 hover:text-white transition"
+        >
+          Powered By Strativ
+        </a>
+      </footer>
     </main>
   );
 }

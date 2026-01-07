@@ -97,7 +97,7 @@ export default function SignupPage() {
   }, [countryListOpen]);
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden overflow-y-auto px-4 py-8 text-zinc-100 sm:px-6 md:px-8 lg:px-14 lg:py-8">
+    <main className="relative min-h-screen flex flex-col overflow-x-hidden overflow-y-auto px-4 py-8 text-zinc-100 sm:px-6 md:px-8 lg:px-14 lg:py-8">
       <div className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-16 top-[-120px] h-64 w-64 rounded-full bg-purple-500/12 blur-[120px]" />
         <div className="absolute right-[-50px] top-16 h-56 w-56 rounded-full bg-pink-400/12 blur-[110px]" />
@@ -373,6 +373,16 @@ export default function SignupPage() {
           </section>
         </div>
       </div>
+      <footer className="relative mt-auto pt-6 text-center">
+        <a
+          href="https://strativ.io/"
+          target="_blank"
+          rel="noreferrer"
+          className="text-[11px] text-zinc-400 hover:text-white transition"
+        >
+          Powered By Strativ
+        </a>
+      </footer>
     </main>
   );
 }

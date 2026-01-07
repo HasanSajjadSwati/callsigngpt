@@ -34,6 +34,12 @@
 
 html {
   background-color: var(--ui-bg);
+  background:
+    radial-gradient(120% 120% at 50% -10%, rgba(255, 255, 255, 0.04), transparent 60%),
+    linear-gradient(180deg, var(--ui-bg), var(--ui-bg-elev));
+  background-repeat: no-repeat;
+  background-size: cover;
+  background-attachment: fixed;
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
   color-scheme: dark;
@@ -49,11 +55,7 @@ html {
 body {
   min-height: 100vh;
   min-height: 100dvh;
-  background:
-    radial-gradient(120% 120% at 50% -10%, rgba(255, 255, 255, 0.04), transparent 60%),
-    linear-gradient(180deg, var(--ui-bg), var(--ui-bg-elev));
-  background-repeat: no-repeat;
-  background-size: cover;
+  background: transparent;
   color: var(--ui-text);
   font-family: var(--font-geist-sans), 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   letter-spacing: 0;

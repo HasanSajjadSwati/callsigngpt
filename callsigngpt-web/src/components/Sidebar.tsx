@@ -1287,6 +1287,16 @@ export default function Sidebar({
             </div>
           )}
         </div>
+        <div className="mt-2 text-center">
+          <a
+            href="https://strativ.io/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] text-[color:var(--ui-text-subtle)] hover:text-[color:var(--ui-text)] transition"
+          >
+            Powered By Strativ
+          </a>
+        </div>
       </div>
     </aside>
     <ConfirmDialog
