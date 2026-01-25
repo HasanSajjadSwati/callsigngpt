@@ -103,6 +103,7 @@ function HomeInner() {
     [accessToken],
   );
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [forceWebSearch, setForceWebSearch] = useState(false);
 
   // Delete confirmation state
   const deleteConfirmRef = useRef<{
@@ -478,8 +479,10 @@ function HomeInner() {
                           disabled={loading}
                           showStop={loading}
                           onStop={stop}
+                          forceWebSearch={forceWebSearch}
+                          onForceWebSearchChange={setForceWebSearch}
                           onSend={async ({ text, attachment }) => {
-                            await send({ text, attachment });
+                            await send({ text, attachment, forceSearch: forceWebSearch });
                           }}
                         />
                       </div>
@@ -530,7 +533,7 @@ function HomeInner() {
                         <div className="flex justify-end">
                           <button
                             type="button"
-                            onClick={() => send({ text: 'Continue' })}
+                            onClick={() => send({ text: 'Continue', forceSearch: forceWebSearch })}
                             className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3 py-1.5 text-xs font-medium text-[color:var(--ui-text)] transition hover:bg-white/5"
                           >
                             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -544,8 +547,10 @@ function HomeInner() {
                         disabled={loading}
                         showStop={loading}
                         onStop={stop}
+                        forceWebSearch={forceWebSearch}
+                        onForceWebSearchChange={setForceWebSearch}
                         onSend={async ({ text, attachment }) => {
-                          await send({ text, attachment });
+                          await send({ text, attachment, forceSearch: forceWebSearch });
                         }}
                       />
                     </div>

@@ -5,7 +5,7 @@ export const envSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   PORT: z.coerce.number().int().positive().default(3001),
   BODY_LIMIT_BYTES: z.coerce.number().int().positive().default(50 * 1024 * 1024),
-  REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(15_000),
+  REQUEST_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
   CORS_ORIGINS: z.string().optional(),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(120),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),

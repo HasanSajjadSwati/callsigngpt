@@ -45,6 +45,8 @@ type ChatBody = {
   messages: ChatMessage[];
   temperature?: number;
   max_tokens?: number;
+  search?: { mode?: 'auto' | 'always' | 'off' };
+  forceSearch?: boolean;
 };
 
 @Injectable()
@@ -91,7 +93,12 @@ export class LlmService {
 
     const withPolicy = this.ensureSearchPolicy(normalized);
     const searchQuery = this.extractSearchQuery(withPolicy);
-    const shouldSearch = Boolean(searchQuery && this.shouldUseSearch(searchQuery));
+    const searchMode = body?.search?.mode;
+    const forceSearch = searchMode === 'always' || body?.forceSearch === true;
+    const blockSearch = searchMode === 'off';
+    const shouldSearch = Boolean(
+      searchQuery && !blockSearch && (forceSearch || this.shouldUseSearch(searchQuery)),
+    );
     if (shouldSearch && searchQuery) {
       yield this.formatSearchStatusChunk('start', searchQuery);
     }

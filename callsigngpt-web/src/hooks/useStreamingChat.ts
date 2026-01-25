@@ -25,6 +25,7 @@ type UseStreamingChatArgs = {
 type SendPayload = {
   text?: string;
   attachment?: Attachment;
+  forceSearch?: boolean;
 };
 
 const formatBytes = (size: number) => {
@@ -64,9 +65,45 @@ const maybeDecodeText = (src: string) => {
   }
 };
 
-const MAX_HISTORY = 60;
-const MAX_CONTEXT_CHARS = 12_000;
-const MAX_RESPONSE_TOKENS = 20_000;
+const readInt = (
+  value: string | undefined,
+  fallback: number,
+  opts: { min?: number; max?: number } = {},
+) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  const int = Math.floor(n);
+  const min = typeof opts.min === 'number' ? opts.min : 0;
+  if (int < min) return fallback;
+  if (typeof opts.max === 'number') return Math.min(int, opts.max);
+  return int;
+};
+
+const readFloat = (
+  value: string | undefined,
+  fallback: number,
+  opts: { min?: number; max?: number } = {},
+) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  if (typeof opts.min === 'number' && n < opts.min) return fallback;
+  if (typeof opts.max === 'number' && n > opts.max) return fallback;
+  return n;
+};
+
+const MAX_HISTORY = readInt(process.env.NEXT_PUBLIC_CHAT_MAX_HISTORY, 60, { min: 1 });
+const MAX_CONTEXT_CHARS = readInt(process.env.NEXT_PUBLIC_CHAT_MAX_CONTEXT_CHARS, 12_000, { min: 1 });
+const MAX_RESPONSE_TOKENS = readInt(process.env.NEXT_PUBLIC_CHAT_MAX_RESPONSE_TOKENS, 20_000, { min: 1 });
+const DEFAULT_RESPONSE_TOKENS = readInt(
+  process.env.NEXT_PUBLIC_CHAT_DEFAULT_RESPONSE_TOKENS,
+  1024,
+  { min: 0 },
+);
+const DEFAULT_TEMPERATURE = readFloat(process.env.NEXT_PUBLIC_CHAT_TEMPERATURE, 0.7, {
+  min: 0,
+  max: 2,
+});
+const SYSTEM_PROMPT_TEMPLATE = (process.env.NEXT_PUBLIC_CHAT_SYSTEM_PROMPT || '').trim();
 const SEARCH_STATUS_PREFIX = '[[[SEARCH_STATUS]]]';
 
 const parseSearchStatus = (chunk: string): { state: string; query?: string } | null => {
@@ -128,11 +165,15 @@ const pickMaxTokens = (messages: ChatMessage[]) => {
   );
   if (!promptTokens) return undefined;
 
-  // If we're nowhere near our trimmed prompt budget, let the backend/model defaults decide
-  // how long to respond; explicitly capping here was cutting replies mid-sentence.
+  // If we're nowhere near our trimmed prompt budget, give a reasonable default cap
+  // so short prompts can still produce fuller answers.
   const approxPromptChars = promptTokens * 4;
+  const defaultCap =
+    DEFAULT_RESPONSE_TOKENS > 0
+      ? Math.min(DEFAULT_RESPONSE_TOKENS, MAX_RESPONSE_TOKENS)
+      : undefined;
   if (approxPromptChars < MAX_CONTEXT_CHARS * 0.9) {
-    return undefined;
+    return defaultCap;
   }
 
   // When the prompt is already huge, keep a ceiling so we don't exceed provider limits.
@@ -324,7 +365,7 @@ export function useStreamingChat({
   );
 
   const send = useCallback(
-    async ({ text, attachment }: SendPayload) => {
+    async ({ text, attachment, forceSearch }: SendPayload) => {
       const userText = (text ?? '').trim();
       if (!userText && !attachment) return;
       if (loading) return;
@@ -365,7 +406,10 @@ export function useStreamingChat({
 
         const baseHistory = (() => {
           const identityName = modelLabels[modelRef.current] ?? modelRef.current;
-          const identity = `You are ${identityName}. Respond helpfully and concisely using that model's capabilities. Do not mention your model name unless explicitly asked.`;
+          const defaultIdentity = `You are ${identityName}. Respond helpfully and thoroughly, using as much detail as the user's question warrants. Be concise only when the user asks for brevity or the question is simple. Do not mention your model name unless explicitly asked.`;
+          const identity = SYSTEM_PROMPT_TEMPLATE
+            ? SYSTEM_PROMPT_TEMPLATE.split('{model}').join(identityName)
+            : defaultIdentity;
           const history = [...msgsRef.current];
           const systemIndex = history.findIndex((m) => m.role === 'system');
           if (systemIndex >= 0) {
@@ -394,8 +438,9 @@ export function useStreamingChat({
           model: modelRef.current,
           conversationId: conversationId ?? undefined,
           messages: boundedHistory,
-          temperature: 0.7,
+          temperature: DEFAULT_TEMPERATURE,
           ...(responseMaxTokens ? { max_tokens: responseMaxTokens } : {}),
+          ...(forceSearch ? { search: { mode: 'always' } } : {}),
         };
 
         let finalAssistantText = '';

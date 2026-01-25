@@ -27,7 +27,7 @@ export class AppConfigService {
   }
 
   get requestTimeoutMs(): number {
-    return this.config.get('REQUEST_TIMEOUT_MS', { infer: true }) ?? 15_000;
+    return this.config.get('REQUEST_TIMEOUT_MS', { infer: true }) ?? 60_000;
   }
 
   get corsOrigins(): true | string[] {

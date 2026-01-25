@@ -11,6 +11,7 @@ const MAX_ATTACHMENT_BYTES = Number(process.env.NEXT_PUBLIC_MAX_ATTACHMENT_MB ||
 type SendPayload = {
   text?: string;
   attachment?: Attachment;
+  forceSearch?: boolean;
 };
 
 type Props = {
@@ -18,6 +19,8 @@ type Props = {
   onSend: (payload: SendPayload) => Promise<void> | void;
   onStop?: () => void;
   showStop?: boolean;
+  forceWebSearch?: boolean;
+  onForceWebSearchChange?: (next: boolean) => void;
 };
 
 const formatSize = (size: number) => {
@@ -34,13 +37,25 @@ const readFileAsDataUrl = (file: File | Blob) =>
     reader.readAsDataURL(file);
   });
 
-export default function Composer({ disabled, onSend, onStop, showStop }: Props) {
+export default function Composer({
+  disabled,
+  onSend,
+  onStop,
+  showStop,
+  forceWebSearch,
+  onForceWebSearchChange,
+}: Props) {
   const [input, setInput] = useState("");
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   useAutosizeTextarea(inputRef, input);
+  const showSearchToggle = typeof onForceWebSearchChange === "function";
+  const searchActive = Boolean(forceWebSearch);
+  const searchToggleClasses = searchActive
+    ? "border-[color:var(--ui-accent)] bg-[color:var(--ui-accent-soft)] text-[color:var(--ui-text)]"
+    : "border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] text-[color:var(--ui-text-muted)]";
 
   const clearAttachment = () => {
     setAttachment(null);
@@ -103,7 +118,11 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
     if (!trimmed && !attachment) return;
 
     setError(null);
-    const payload: SendPayload = { text: trimmed || undefined, attachment: attachment ?? undefined };
+    const payload: SendPayload = {
+      text: trimmed || undefined,
+      attachment: attachment ?? undefined,
+      forceSearch: forceWebSearch ? true : undefined,
+    };
 
     // Clear immediately so the just-sent text doesn't linger while the reply streams
     setInput("");
@@ -160,6 +179,35 @@ export default function Composer({ disabled, onSend, onStop, showStop }: Props) 
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
                   <path d="M6 6l12 12M18 6L6 18" />
                 </svg>
+              </button>
+            </div>
+          )}
+
+          {showSearchToggle && (
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => onForceWebSearchChange?.(!searchActive)}
+                disabled={disabled}
+                role="switch"
+                aria-checked={searchActive}
+                aria-pressed={searchActive}
+                title="Always use web search for this chat"
+                className={[
+                  "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium transition",
+                  searchToggleClasses,
+                  disabled ? "opacity-60 cursor-not-allowed" : "hover:bg-white/5",
+                ].join(" ")}
+              >
+                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6">
+                  <path d="M12 3a9 9 0 1 0 0 18" />
+                  <path d="M3 12h18" />
+                  <path d="M12 3a15 15 0 0 1 0 18" />
+                </svg>
+                <span>Search the web</span>
+                <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--ui-text-subtle)]">
+                  {searchActive ? "Always" : "Auto"}
+                </span>
               </button>
             </div>
           )}

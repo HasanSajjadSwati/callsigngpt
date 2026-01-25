@@ -1,6 +1,8 @@
 'use client';
 
 import { useCallback, useMemo, useState, type CSSProperties } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { UIMsg } from '@/lib/chat';
 
 export type Role = UIMsg['role'];
@@ -73,20 +75,20 @@ export default function MessageBubble({ msg }: { msg: Message }) {
   );
 
   const bubbleBase = [
-    'inline-block max-w-full rounded-2xl px-3 py-2 text-[15px] leading-6 whitespace-pre-wrap break-words',
-    'border border-transparent',
+    'inline-block max-w-full rounded-2xl px-4 py-2.5 text-[15px] leading-[1.4] whitespace-pre-wrap break-words',
+    'border',
   ].join(' ');
 
   const bubbleWrapper = hasCode
-    ? 'w-full min-w-0 max-w-[88%] lg:max-w-[90ch]'
-    : 'w-fit min-w-0 max-w-[88%] lg:max-w-[90ch]';
+    ? 'w-full min-w-0 max-w-[98%] lg:max-w-[100ch]'
+    : 'w-fit min-w-0 max-w-[96%] lg:max-w-[100ch]';
 
   const bubbleUser =
-    'bg-[color:var(--ui-input)] text-[color:var(--ui-text)] border-[color:var(--ui-border-strong)]';
+    'bg-[#343541] text-white border-[#4a4a5e] shadow-md';
   const bubbleAsst =
-    'bg-[color:var(--ui-surface)] text-[color:var(--ui-text)] border-[color:var(--ui-border)]';
+    'bg-[#2b2c33] text-[#ececf1] border-[#3a3b43] shadow-md';
   const bubbleSystem =
-    'bg-[color:var(--ui-surface)] text-[color:var(--ui-text-muted)] italic border-[color:var(--ui-border)]';
+    'bg-[#2d2d38] text-[#b4b4ba] italic border-[#3e3e4a] shadow-sm';
 
   const handleCopy = useCallback(async (text: string, idx: number) => {
     try {
@@ -110,51 +112,123 @@ export default function MessageBubble({ msg }: { msg: Message }) {
             ...baseStyle,
           }}
         >
-          <div className="space-y-3">
+          <div className="space-y-0">
             {segments.map((segment, idx) =>
               segment.type === 'code' ? (
                 <div
                   key={`code-${idx}`}
-                  className="relative max-w-full rounded-xl border border-[color:var(--ui-code-border)] bg-[color:var(--ui-code-bg)] text-zinc-100"
+                  className="relative max-w-full rounded-lg overflow-hidden border border-[#565869]/30 bg-[#1e1e28] text-[#ececf1] shadow-lg"
                 >
-                  <div className="flex items-center justify-between px-3 py-2 text-xs uppercase tracking-wide text-zinc-400">
-                    <span className="font-semibold">{segment.lang || 'code'}</span>
+                  <div className="flex items-center justify-between px-4 py-2.5 bg-[#2d2d38]/60 border-b border-[#565869]/20">
+                    <span className="text-xs font-medium text-[#b4b4ba] uppercase tracking-wider">{segment.lang || 'plaintext'}</span>
                     <button
                       type="button"
                       onClick={() => handleCopy(segment.value, idx)}
-                      className="rounded-full border border-[color:var(--ui-border)] bg-transparent px-3 py-1 text-[11px] font-semibold text-zinc-300 transition hover:bg-white/10"
+                      className="rounded-md bg-[#343541] hover:bg-[#40414f] px-3 py-1.5 text-[11px] font-medium text-[#ececf1] transition-all duration-150 border border-[#565869]/30 hover:border-[#565869]/50"
                     >
-                      {copiedIdx === idx ? 'Copied' : 'Copy'}
+                      {copiedIdx === idx ? '✓ Copied!' : 'Copy code'}
                     </button>
                   </div>
                   <pre
-                    className="scroll-area overflow-x-auto overscroll-x-contain px-3 pb-3 text-[13px] leading-6"
+                    className="scroll-area overflow-x-auto overscroll-x-contain px-4 py-4 text-[13.5px] leading-[1.6]"
                     style={{ WebkitOverflowScrolling: 'touch', touchAction: 'pan-x' }}
                   >
-                    <code className="whitespace-pre font-mono">{segment.value}</code>
+                    <code className="whitespace-pre font-mono text-[#ececf1]">{segment.value}</code>
                   </pre>
                 </div>
               ) : (
                 <div
                   key={`text-${idx}`}
-                  className="whitespace-pre-wrap leading-6 text-[15px]"
+                  className="markdown-content prose prose-invert max-w-none"
                 >
-                  {segment.value}
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      // Paragraphs
+                      p: ({ children }) => <p className="mb-0 last:mb-0 leading-[1.3] text-[15px]">{children}</p>,
+                      // Headers
+                      h1: ({ children }) => <h1 className="text-xl font-bold mb-0 mt-0 first:mt-0 leading-[1.1] text-white">{children}</h1>,
+                      h2: ({ children }) => <h2 className="text-lg font-bold mb-0 mt-0 first:mt-0 leading-[1.1] text-white">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-base font-semibold mb-0 mt-0 first:mt-0 leading-[1.1] text-white">{children}</h3>,
+                      h4: ({ children }) => <h4 className="text-[15px] font-semibold mb-0 mt-0 first:mt-0 leading-[1.1] text-white">{children}</h4>,
+                      // Lists
+                      ul: ({ children }) => <ul className="list-disc list-outside ml-5 mb-0 mt-0 space-y-0 marker:text-[#b4b4ba]">{children}</ul>,
+                      ol: ({ children }) => <ol className="list-decimal list-outside ml-5 mb-0 mt-0 space-y-0 marker:text-[#b4b4ba] marker:font-medium">{children}</ol>,
+                      li: ({ children }) => <li className="leading-[1.3] pl-1 my-0 py-0">{children}</li>,
+                      // Links
+                      a: ({ href, children }) => (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[#10a37f] hover:text-[#0e8f6f] underline underline-offset-[3px] decoration-1 hover:decoration-2 transition-all duration-150 font-normal"
+                        >
+                          {children}
+                        </a>
+                      ),
+                      // Bold, italic, strikethrough
+                      strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+                      em: ({ children }) => <em className="italic">{children}</em>,
+                      del: ({ children }) => <del className="line-through opacity-80">{children}</del>,
+                      // Blockquotes
+                      blockquote: ({ children }) => (
+                        <blockquote className="border-l-[3px] border-[#565869] bg-[#2d2d38]/40 rounded-r-md pl-4 pr-4 py-1 my-0 text-[#d1d1d6]">
+                          {children}
+                        </blockquote>
+                      ),
+                      // Horizontal rule
+                      hr: () => <hr className="my-0 border-t border-[#565869]/30" />,
+                      // Tables
+                      table: ({ children }) => (
+                        <div className="overflow-x-auto my-0 rounded-lg border border-[#565869]/40">
+                          <table className="min-w-full border-collapse">
+                            {children}
+                          </table>
+                        </div>
+                      ),
+                      thead: ({ children }) => <thead className="bg-[#2d2d38]">{children}</thead>,
+                      tbody: ({ children }) => <tbody className="bg-[#1e1e28]">{children}</tbody>,
+                      tr: ({ children }) => <tr className="border-b border-[#565869]/20 last:border-0">{children}</tr>,
+                      th: ({ children }) => (
+                        <th className="px-4 py-3 text-left text-sm font-semibold text-white">
+                          {children}
+                        </th>
+                      ),
+                      td: ({ children }) => (
+                        <td className="px-4 py-3 text-sm">{children}</td>
+                      ),
+                      // Code inline (not fenced blocks)
+                      code: ({ children, className }) => {
+                        // If it has a language class, it's a code block (already handled by our fence parser)
+                        if (className?.includes('language-')) {
+                          return <code className={className}>{children}</code>;
+                        }
+                        // Inline code
+                        return (
+                          <code className="bg-[#1e1e28] text-[#ececf1] px-[6px] py-[2px] rounded-md text-[13.5px] font-mono border border-[#565869]/30 whitespace-nowrap">
+                            {children}
+                          </code>
+                        );
+                      },
+                    }}
+                  >
+                    {segment.value}
+                  </ReactMarkdown>
                 </div>
               ),
             )}
           </div>
 
           {msg.attachment && (
-            <div className="mt-3 rounded-2xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] p-2">
+            <div className="mt-4 rounded-lg border border-[#565869]/30 bg-[#2d2d38]/40 p-3">
               {msg.attachment.type === 'image' ? (
                 <>
                   <img
                     src={msg.attachment.src}
                     alt={msg.attachment.name}
-                    className="w-full max-h-48 rounded-xl object-contain"
+                    className="w-full max-h-48 rounded-md object-contain"
                   />
-                  <p className="mt-2 text-xs text-zinc-400">
+                  <p className="mt-2 text-xs text-[#b4b4ba]">
                     {msg.attachment.name} - {msg.attachment.mime}
                   </p>
                 </>
@@ -162,10 +236,10 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                 <div className="flex flex-col gap-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--ui-surface-alt)]">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#343541]">
                         <svg
                           viewBox="0 0 24 24"
-                          className="h-6 w-6 text-zinc-400"
+                          className="h-5 w-5 text-[#b4b4ba]"
                           fill="none"
                           stroke="currentColor"
                           strokeWidth="1.5"
@@ -175,10 +249,10 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                         </svg>
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-[color:var(--ui-text)]">
+                        <p className="text-sm font-medium text-white">
                           {msg.attachment.name}
                         </p>
-                        <p className="text-xs text-zinc-400">
+                        <p className="text-xs text-[#b4b4ba]">
                           {msg.attachment.mime} - {formatBytes(msg.attachment.size)}
                         </p>
                       </div>
@@ -187,7 +261,7 @@ export default function MessageBubble({ msg }: { msg: Message }) {
                       <a
                         href={msg.attachment.src}
                         download={msg.attachment.name}
-                        className="rounded-full border border-[color:var(--ui-border)] bg-transparent px-3 py-1 text-xs font-medium text-zinc-200 transition hover:bg-white/5"
+                        className="rounded-md border border-[#565869]/40 bg-[#343541] hover:bg-[#40414f] px-3 py-1.5 text-xs font-medium text-white transition-all duration-150"
                       >
                         Download
                       </a>
@@ -201,22 +275,22 @@ export default function MessageBubble({ msg }: { msg: Message }) {
 
         {timestampLabel && (
           <div
-            className={`mt-1.5 flex text-[11px] text-zinc-500 ${
+            className={`mt-2 flex text-[10.5px] text-[#8e8ea0] ${
               isUser ? 'justify-end' : 'justify-start'
             }`}
           >
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 px-1">
               <svg
                 viewBox="0 0 24 24"
-                className="h-4 w-4"
+                className="h-3.5 w-3.5 opacity-60"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="1.6"
+                strokeWidth="2"
               >
                 <circle cx="12" cy="12" r="9" />
                 <path d="M12 7v5.2l3 1.8" />
               </svg>
-              <span className="font-medium tracking-tight">{timestampLabel}</span>
+              <span className="font-medium tracking-tight opacity-80">{timestampLabel}</span>
             </span>
           </div>
         )}
