@@ -352,8 +352,8 @@ export default function SignupPage() {
 
               <p className="text-center text-xs text-zinc-500">
                 By continuing you agree to our{' '}
-                <span className="text-zinc-300 underline-offset-4 hover:underline">Terms</span> and{' '}
-                <span className="text-zinc-300 underline-offset-4 hover:underline">Privacy Policy</span>.
+                <a href="/terms" className="text-zinc-300 underline-offset-4 hover:underline">Terms</a> and{' '}
+                <a href="/terms" className="text-zinc-300 underline-offset-4 hover:underline">Privacy Policy</a>.
               </p>
 
               <div className="text-center text-sm text-zinc-400">
@@ -373,12 +373,21 @@ export default function SignupPage() {
           </section>
         </div>
       </div>
-      <footer className="relative mt-auto pt-6 text-center">
+      <footer className="relative mt-auto pt-6 text-center space-y-2">
+        <div className="flex items-center justify-center gap-4 text-[11px] text-zinc-400">
+          <a href="/terms" className="hover:text-white transition">
+            Terms & Conditions
+          </a>
+          <span className="text-zinc-600">|</span>
+          <a href="/terms" className="hover:text-white transition">
+            Privacy Policy
+          </a>
+        </div>
         <a
           href="https://strativ.io/"
           target="_blank"
           rel="noreferrer"
-          className="text-[11px] text-zinc-400 hover:text-white transition"
+          className="block text-[11px] text-zinc-400 hover:text-white transition"
         >
           Powered By Strativ
         </a>

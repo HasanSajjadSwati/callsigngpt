@@ -23,8 +23,9 @@ class ModelCache {
 
     this.inflight = this.client
       .get<ModelMeta[]>('/models')
-      .then((data) => {
-        this.cache = { data: data || [], expiresAt: now + this.ttl };
+      .then((response) => {
+        const models = Array.isArray(response) ? response : [];
+        this.cache = { data: models, expiresAt: now + this.ttl };
         return this.cache.data;
       })
       .finally(() => {

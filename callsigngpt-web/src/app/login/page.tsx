@@ -200,12 +200,21 @@ export default function LoginPage() {
           </section>
         </div>
       </div>
-      <footer className="relative mt-auto pt-6 text-center">
+      <footer className="relative mt-auto pt-6 text-center space-y-2">
+        <div className="flex items-center justify-center gap-4 text-[11px] text-zinc-400">
+          <a href="/terms" className="hover:text-white transition">
+            Terms & Conditions
+          </a>
+          <span className="text-zinc-600">|</span>
+          <a href="/terms" className="hover:text-white transition">
+            Privacy Policy
+          </a>
+        </div>
         <a
           href="https://strativ.io/"
           target="_blank"
           rel="noreferrer"
-          className="text-[11px] text-zinc-400 hover:text-white transition"
+          className="block text-[11px] text-zinc-400 hover:text-white transition"
         >
           Powered By Strativ
         </a>

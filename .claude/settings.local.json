@@ -4,7 +4,12 @@
       "Bash(npm install:*)",
       "Bash(npm run dev:*)",
       "Bash(npm run start:dev:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(wc:*)",
+      "Bash(tree:*)",
+      "Bash(head:*)"
     ]
   }
 }
