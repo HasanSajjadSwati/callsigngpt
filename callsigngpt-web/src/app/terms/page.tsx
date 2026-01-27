@@ -28,7 +28,7 @@ export default function TermsPage() {
           <div className="space-y-2 mb-8">
             <p className="text-[11px] uppercase tracking-[0.35em] text-emerald-200/80">Legal</p>
             <h1 className="text-3xl font-semibold text-white sm:text-4xl">Terms and Conditions</h1>
-            <p className="text-sm text-zinc-400">Last updated: January 2025</p>
+            <p className="text-sm text-zinc-400">Last updated: January 2026</p>
           </div>
 
           <div className="prose prose-invert prose-zinc max-w-none space-y-6 text-zinc-300">
@@ -132,12 +132,21 @@ export default function TermsPage() {
         </div>
       </div>
 
-      <footer className="relative mt-auto pt-6 text-center">
+      <footer className="relative mt-auto pt-6 text-center space-y-2">
+        <div className="flex items-center justify-center gap-4 text-[11px] text-zinc-400">
+          <a href="/terms" className="hover:text-white transition">
+            Terms & Conditions
+          </a>
+          <span className="text-zinc-600">|</span>
+          <a href="/privacy" className="hover:text-white transition">
+            Privacy Policy
+          </a>
+        </div>
         <a
           href="https://strativ.io/"
           target="_blank"
           rel="noreferrer"
-          className="text-[11px] text-zinc-400 hover:text-white transition"
+          className="block text-[11px] text-zinc-400 hover:text-white transition"
         >
           Powered By Strativ
         </a>

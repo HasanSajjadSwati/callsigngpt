@@ -206,7 +206,7 @@ export default function LoginPage() {
             Terms & Conditions
           </a>
           <span className="text-zinc-600">|</span>
-          <a href="/terms" className="hover:text-white transition">
+          <a href="/privacy" className="hover:text-white transition">
             Privacy Policy
           </a>
         </div>
