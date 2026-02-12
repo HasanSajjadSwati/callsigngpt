@@ -129,7 +129,9 @@ function HomeInner() {
     msgs,
     setMsgs,
     conversationId,
+    loadedModel,
     sidebarReloadKey,
+    setSidebarReloadKey,
     ensureConversation,
     appendMessages,
     saveCurrentChatIfNeeded,
@@ -217,6 +219,7 @@ function HomeInner() {
     ensureConversation,
     appendMessages,
     conversationId,
+    onSidebarDirty: () => setSidebarReloadKey((k) => k + 1),
     onError: (message) =>
       setStatusDialog({
         open: true,
@@ -235,49 +238,10 @@ function HomeInner() {
     },
   });
 
+  // Sync model picker when conversation loads (uses loadedModel from useConversation — no extra fetch)
   useEffect(() => {
-    let cancelled = false;
-
-    async function hydrateModelFromDB() {
-      if (!conversationId) return;
-      try {
-        const r = await fetch(`/api/conversations/${conversationId}`, {
-          cache: 'no-store',
-          credentials: 'include',
-          headers: { ...authHeaders } as HeadersInit,
-        });
-        if (r.ok) {
-          const { conversation } = await r.json();
-          if (!cancelled && conversation?.model) {
-            _setModel(conversation.model);
-            return;
-          }
-        }
-      } catch (e) {
-        console.error('Failed to hydrate model from DB:', e);
-      }
-
-      try {
-        if (conversationClient) {
-          const data = await conversationClient.get(`/conversations/${conversationId}`);
-          const conversation = (data as any)?.conversation ?? data;
-          if (!cancelled && conversation?.model) {
-            _setModel(conversation.model);
-          }
-        }
-      } catch (e) {
-        const msg = (e as Error)?.message || '';
-        if (!/404/.test(msg)) {
-          console.error('Failed to hydrate model from API:', e);
-        }
-      }
-    }
-
-    hydrateModelFromDB();
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, _setModel, authHeaders, conversationClient]);
+    if (loadedModel) _setModel(loadedModel);
+  }, [loadedModel, _setModel]);
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [hasPendingScroll, setHasPendingScroll] = useState(false);
@@ -346,7 +310,14 @@ function HomeInner() {
     if (!authLoading && !session) router.replace('/login');
   }, [authLoading, session, router]);
 
-  if (authLoading) return <div className="min-h-screen bg-[color:var(--ui-bg)]" />;
+  if (authLoading) return (
+    <div className="min-h-screen bg-[color:var(--ui-bg)] flex items-center justify-center">
+      <div className="flex flex-col items-center gap-3">
+        <div className="h-8 w-8 rounded-full border-2 border-[color:var(--ui-border-strong)] border-t-[color:var(--ui-accent)] animate-spin" />
+        <span className="text-sm text-[color:var(--ui-text-muted)] animate-pulse">Loading…</span>
+      </div>
+    </div>
+  );
   if (!session) return null;
 
   const safeMsgs = sanitizeMsgs(msgs);
@@ -598,7 +569,16 @@ function HomeInner() {
 
 export default function Home() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[color:var(--ui-bg)]" />}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[color:var(--ui-bg)] flex items-center justify-center">
+          <div className="flex flex-col items-center gap-3">
+            <div className="h-8 w-8 rounded-full border-2 border-[color:var(--ui-border-strong)] border-t-[color:var(--ui-accent)] animate-spin" />
+            <span className="text-sm text-[color:var(--ui-text-muted)] animate-pulse">Loading…</span>
+          </div>
+        </div>
+      }
+    >
       <HomeInner />
     </Suspense>
   );

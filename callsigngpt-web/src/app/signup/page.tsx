@@ -227,6 +227,7 @@ export default function SignupPage() {
                 <input
                   className={inputClass}
                   placeholder="Full name (optional)"
+                  autoComplete="name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                 />
@@ -305,6 +306,7 @@ export default function SignupPage() {
                       className={`${inputClass} flex-1`}
                       placeholder="Phone (optional)"
                       inputMode="tel"
+                      autoComplete="tel-national"
                       value={phoneDigits}
                       onChange={(e) => {
                         const digitsOnly = normalizePhoneInput(e.target.value).replace(/\D/g, '');

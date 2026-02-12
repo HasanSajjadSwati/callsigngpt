@@ -1,22 +1,18 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { AppConfigService } from '../config/app-config.service';
+import { SUPABASE_ADMIN_CLIENT } from '../common/supabase/supabase-admin.token';
 
 type UsageResult = { totalCalls: number; dailyCap: number };
 
 @Injectable()
 export class UsageLoggerService {
   private readonly logger = new Logger(UsageLoggerService.name);
-  private readonly supabase: SupabaseClient;
 
-  constructor(private readonly config: AppConfigService) {
-    const url = this.config.supabaseUrl;
-    const serviceKey = this.config.supabaseServiceRoleKey;
-    if (!url || !serviceKey) {
-      throw new Error('Supabase credentials missing for usage logger');
-    }
-    this.supabase = createClient(url, serviceKey);
-  }
+  constructor(
+    @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabase: SupabaseClient,
+    private readonly config: AppConfigService,
+  ) {}
 
   /**
    * Atomically increment the per-user/model daily counter in Supabase and

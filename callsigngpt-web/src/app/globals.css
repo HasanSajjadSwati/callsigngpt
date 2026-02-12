@@ -271,18 +271,56 @@ select option {
   }
 }
 
-/* Modern markdown content styling */
-.markdown-content {
+/* ─── Modern markdown body (ChatGPT / Claude style) ─────────────────── */
+.markdown-body {
   font-feature-settings: 'kern' 1, 'liga' 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  line-height: 1.65;
 }
 
-/* Better text selection */
-.markdown-content ::selection {
+.markdown-body ::selection {
   background: rgba(16, 163, 127, 0.3);
   color: inherit;
+}
+
+/* ── Inline code ── */
+.markdown-body .inline-code {
+  font-size: 0.875em;
+  vertical-align: baseline;
+}
+
+/* ── Code blocks: override highlight.js theme bg to match our design ── */
+.markdown-body .code-block-wrapper .hljs {
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+/* ── Assistant messages get wider, no bubble ── */
+.markdown-body.assistant {
+  max-width: none;
+}
+
+/* ── Nested list spacing ── */
+.markdown-body li > ul,
+.markdown-body li > ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0;
+}
+
+/* ── Paragraph spacing inside list items ── */
+.markdown-body li > p {
+  margin-bottom: 0.25rem;
+}
+
+.markdown-body li > p:last-child {
+  margin-bottom: 0;
+}
+
+/* ── Tighter spacing between consecutive paragraphs ── */
+.markdown-body p + p {
+  margin-top: 0;
 }
 
 /* Smooth scrolling for code blocks */

@@ -11,11 +11,13 @@ export const envSchema = z.object({
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   MAX_IMAGE_DATA_CHARS: z.coerce.number().int().positive().optional(),
   MODEL_CONFIG_CACHE_MS: z.coerce.number().int().nonnegative().default(30_000),
+  DEFAULT_MAX_TOKENS: z.coerce.number().int().positive().default(4096),
+  DEFAULT_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
 
   SUPABASE_URL: z.string().url(),
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
-  SUPABASE_ANON_KEY: z.string().optional(),
-  SUPABASE_JWT_SECRET: z.string().optional(),
+  SUPABASE_ANON_KEY: z.string().min(1),
+  SUPABASE_JWT_SECRET: z.string().min(1),
 
   DATABASE_URL: z.string().optional(),
 

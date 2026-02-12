@@ -1,7 +1,8 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Inject, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { ModelConfig, ModelConfigService } from '../llm/model-config.service';
 import { AppConfigService } from '../config/app-config.service';
+import { SUPABASE_ADMIN_CLIENT } from '../common/supabase/supabase-admin.token';
 
 export type ModelRuleConfig = Pick<ModelConfig, 'modelKey' | 'isPremium' | 'perModelCap' | 'fallbackModel'>;
 
@@ -18,21 +19,14 @@ export type UsageConfig = {
 @Injectable()
 export class UsageConfigService {
   private readonly logger = new Logger(UsageConfigService.name);
-  private readonly supabase: SupabaseClient;
   private cache?: { value: UsageConfig; expiresAt: number };
   private readonly cacheMs = 60_000; // light in-memory cache to avoid repeated hits
 
   constructor(
+    @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabase: SupabaseClient,
     private readonly modelConfig: ModelConfigService,
     private readonly config: AppConfigService,
-  ) {
-    const url = this.config.supabaseUrl;
-    const serviceKey = this.config.supabaseServiceRoleKey;
-    if (!url || !serviceKey) {
-      throw new Error('Supabase credentials missing for usage caps');
-    }
-    this.supabase = createClient(url, serviceKey);
-  }
+  ) {}
 
   isGpt5Model(model: string): boolean {
     return /gpt-5/i.test(model || '');

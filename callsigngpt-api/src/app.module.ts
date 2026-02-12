@@ -11,6 +11,7 @@ import { SupabaseJwtGuard } from './auth/supabase-jwt.guard';
 import { AccountModule } from './account/account.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { AppConfigModule } from './config/app-config.module';
+import { SupabaseAdminModule } from './common/supabase/supabase-admin.module';
 import { envSchema } from './config/env.schema';
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { envSchema } from './config/env.schema';
       validate: (rawEnv) => envSchema.parse(rawEnv),
     }),
     AppConfigModule,
+    SupabaseAdminModule,
     PrismaModule,   // <-- make Prisma visible in AppModule scope
     AuthModule,
     LimitsModule,

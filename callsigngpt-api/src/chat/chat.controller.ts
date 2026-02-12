@@ -1,18 +1,20 @@
 // callsigngpt-api/src/chat/chat.controller.ts
 
-import { Controller, Get, Post, Body, Req, Res, UseInterceptors, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Req, Res, UseInterceptors, BadRequestException, Logger } from '@nestjs/common';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { LimitsInterceptor } from '../limits/limits.interceptor';
 import { Public } from '../common/decorators/public.decorator';
 import { LlmService } from '../llm/llm.service';
-import { ModelConfigService } from '../llm/model-config.service';
+import { AppConfigService } from '../config/app-config.service';
+import { ChatDto } from '../llm/dto/chat.dto';
 
 @UseInterceptors(LimitsInterceptor)
 @Controller('chat')
 export class ChatController {
+  private readonly logger = new Logger(ChatController.name);
   constructor(
     private readonly llm: LlmService,
-    private readonly modelConfig: ModelConfigService,
+    private readonly config: AppConfigService,
   ) {}
 
   @Public()
@@ -21,31 +23,15 @@ export class ChatController {
     return { ok: true };
   }
 
-  // Quick manual test endpoint
-  @Public()
-  @Post('test')
-  async test(@Req() req: FastifyRequest, @Res() res: FastifyReply) {
-    const origin = (req.headers.origin as string) || '*';
-    res.status(200);
-    res.raw.setHeader('Access-Control-Allow-Origin', origin);
-    res.raw.setHeader('Vary', 'Origin');
-    res.raw.setHeader('Access-Control-Allow-Credentials', 'true');
-
-    res.raw.setHeader('Content-Type', 'text/event-stream');
-    res.raw.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.raw.setHeader('Connection', 'keep-alive');
-    res.raw.flushHeaders?.();
-
-    const sendDelta = (s: string) =>
-      res.raw.write(`data: ${JSON.stringify({ choices: [{ delta: { content: s } }] })}\n\n`);
-
-    sendDelta('hello ');
-    setTimeout(() => sendDelta('world'), 300);
-    setTimeout(() => { res.raw.write('data: [DONE]\n\n'); res.raw.end(); }, 600);
+  private getSafeOrigin(requestOrigin: string | undefined): string {
+    const configured = this.config.corsOrigins;
+    if (configured === true) return requestOrigin || '*';
+    if (!requestOrigin) return configured[0] || '*';
+    return configured.includes(requestOrigin) ? requestOrigin : configured[0] || '*';
   }
 
   @Post()
-  async chat(@Body() body: any, @Req() req: FastifyRequest, @Res() res: FastifyReply) {
+  async chat(@Body() body: ChatDto, @Req() req: FastifyRequest, @Res() res: FastifyReply) {
     const user = (req as any).user as { id: string; tier?: string } | undefined;
     if (!user?.id) throw new BadRequestException('Unauthorized');
     const overrideModel = (req as any).llmOverrideModel as string | undefined;
@@ -54,7 +40,7 @@ export class ChatController {
       body.model = overrideModel;
     }
 
-    const origin = (req.headers.origin as string) || '*';
+    const origin = this.getSafeOrigin(req.headers.origin as string | undefined);
     res.status(200);
     res.raw.setHeader('Access-Control-Allow-Origin', origin);
     res.raw.setHeader('Vary', 'Origin');
@@ -83,47 +69,16 @@ export class ChatController {
       res.raw.write('data: [DONE]\n\n');
       res.raw.end();
     } catch (err: any) {
-      const msg = err?.message || 'stream failed';
+      const rawMsg = err?.message || 'stream failed';
+      this.logger.error(`Chat stream error: ${rawMsg}`, err?.stack);
+      // Sanitize: only expose safe error messages to the client
+      const safeMsg = /quota|limit|unauthorized|forbidden/i.test(rawMsg)
+        ? rawMsg
+        : 'An error occurred while processing your request.';
       try {
-        // Also surface error as a data frame so the client displays it
-        res.raw.write(`data: ${JSON.stringify({ error: msg })}\n\n`);
+        res.raw.write(`data: ${JSON.stringify({ error: safeMsg })}\n\n`);
         res.raw.write('data: [DONE]\n\n');
       } catch {}
-      res.raw.end();
-      throw err;
-    }
-  }
-
-  @Public()
-  @Post('gemini-test')
-  async geminiTest(@Body() body: any, @Res() res: FastifyReply) {
-    res.status(200);
-    res.raw.setHeader('Content-Type', 'text/event-stream');
-    res.raw.setHeader('Cache-Control', 'no-cache, no-transform');
-    res.raw.setHeader('Connection', 'keep-alive');
-    res.raw.flushHeaders?.();
-
-    // Pick a model from Supabase (prefer Google/Gemini; fallback to any enabled model)
-    const models = await this.modelConfig.listModels();
-    const chosen =
-      models.find((m) => m.provider === 'google') ||
-      models.find((m) => m.modelKey) ||
-      null;
-    if (!chosen) {
-      throw new InternalServerErrorException('No models configured');
-    }
-
-    try {
-      for await (const chunk of this.llm.stream(
-        { model: chosen.modelKey, messages: body?.messages ?? [{ role: 'user', content: 'Say hi' }] },
-        undefined
-      )) {
-        res.raw.write(`data: ${JSON.stringify({ choices: [{ delta: { content: chunk } }] })}\n\n`);
-      }
-      res.raw.write('data: [DONE]\n\n');
-      res.raw.end();
-    } catch (e: any) {
-      try { res.raw.write(`event: error\ndata: ${JSON.stringify({ message: e?.message || 'error' })}\n\n`); } catch {}
       res.raw.end();
     }
   }

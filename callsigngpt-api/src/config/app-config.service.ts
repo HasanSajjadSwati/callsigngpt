@@ -32,7 +32,15 @@ export class AppConfigService {
 
   get corsOrigins(): true | string[] {
     const raw = this.config.get('CORS_ORIGINS', { infer: true });
-    if (!raw) return true; // reflect request origin
+    if (!raw) {
+      // In production, do NOT reflect all origins — require explicit configuration
+      if (this.isProduction) {
+        throw new Error(
+          'CORS_ORIGINS must be set in production (comma-separated list of allowed origins)',
+        );
+      }
+      return true; // allow all in development only
+    }
     const origins = raw
       .split(',')
       .map((o) => o.trim())
@@ -57,14 +65,24 @@ export class AppConfigService {
   }
 
   get supabaseAnonKey(): string {
-    return (
-      this.config.get('SUPABASE_ANON_KEY', { infer: true }) ??
-      this.config.get('SUPABASE_SERVICE_ROLE_KEY', { infer: true })
-    );
+    const key = this.config.get('SUPABASE_ANON_KEY', { infer: true });
+    if (!key) {
+      throw new Error(
+        'SUPABASE_ANON_KEY is not configured. ' +
+        'Do NOT fall back to the service role key — it has admin privileges.',
+      );
+    }
+    return key;
   }
 
-  get supabaseJwtSecret(): string | undefined {
-    return this.config.get('SUPABASE_JWT_SECRET', { infer: true }) ?? undefined;
+  get supabaseJwtSecret(): string {
+    const secret = this.config.get('SUPABASE_JWT_SECRET', { infer: true });
+    if (!secret) {
+      throw new Error(
+        'SUPABASE_JWT_SECRET is required for local JWT verification.',
+      );
+    }
+    return secret;
   }
 
   get maxImageDataChars(): number | undefined {
@@ -73,5 +91,15 @@ export class AppConfigService {
 
   get modelConfigCacheMs(): number {
     return this.config.get('MODEL_CONFIG_CACHE_MS', { infer: true }) ?? 30_000;
+  }
+
+  /** Default max response tokens when not specified by client or model config. */
+  get defaultMaxTokens(): number {
+    return this.config.get('DEFAULT_MAX_TOKENS', { infer: true }) ?? 4096;
+  }
+
+  /** Default temperature when not specified by client or model config. */
+  get defaultTemperature(): number {
+    return this.config.get('DEFAULT_TEMPERATURE', { infer: true }) ?? 0.7;
   }
 }

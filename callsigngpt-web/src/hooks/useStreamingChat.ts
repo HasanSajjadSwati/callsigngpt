@@ -92,11 +92,11 @@ const readFloat = (
 };
 
 const MAX_HISTORY = readInt(process.env.NEXT_PUBLIC_CHAT_MAX_HISTORY, 60, { min: 1 });
-const MAX_CONTEXT_CHARS = readInt(process.env.NEXT_PUBLIC_CHAT_MAX_CONTEXT_CHARS, 12_000, { min: 1 });
+const MAX_CONTEXT_CHARS = readInt(process.env.NEXT_PUBLIC_CHAT_MAX_CONTEXT_CHARS, 100_000, { min: 1 });
 const MAX_RESPONSE_TOKENS = readInt(process.env.NEXT_PUBLIC_CHAT_MAX_RESPONSE_TOKENS, 20_000, { min: 1 });
 const DEFAULT_RESPONSE_TOKENS = readInt(
   process.env.NEXT_PUBLIC_CHAT_DEFAULT_RESPONSE_TOKENS,
-  1024,
+  4096,
   { min: 0 },
 );
 const DEFAULT_TEMPERATURE = readFloat(process.env.NEXT_PUBLIC_CHAT_TEMPERATURE, 0.7, {
@@ -163,21 +163,22 @@ const pickMaxTokens = (messages: ChatMessage[]) => {
     (sum, msg) => sum + Math.ceil(estimateContentChars(msg.content) / 4),
     0,
   );
-  if (!promptTokens) return undefined;
+  if (!promptTokens) return DEFAULT_RESPONSE_TOKENS || 4096;
 
-  // If we're nowhere near our trimmed prompt budget, give a reasonable default cap
-  // so short prompts can still produce fuller answers.
   const approxPromptChars = promptTokens * 4;
+
+  // For normal-length conversations, use the default cap (4096)
+  // which gives the model plenty of room for detailed answers.
   const defaultCap =
     DEFAULT_RESPONSE_TOKENS > 0
       ? Math.min(DEFAULT_RESPONSE_TOKENS, MAX_RESPONSE_TOKENS)
-      : undefined;
-  if (approxPromptChars < MAX_CONTEXT_CHARS * 0.9) {
+      : 4096;
+  if (approxPromptChars < MAX_CONTEXT_CHARS * 0.8) {
     return defaultCap;
   }
 
-  // When the prompt is already huge, keep a ceiling so we don't exceed provider limits.
-  return Math.min(MAX_RESPONSE_TOKENS, Math.floor(promptTokens * 0.5));
+  // When the prompt is very large, cap response tokens but still allow generous output.
+  return Math.min(MAX_RESPONSE_TOKENS, Math.max(4096, Math.floor(promptTokens * 0.5)));
 };
 
 const buildMessageContent = (message: UIMsg): ChatMessage['content'] => {
@@ -244,6 +245,32 @@ export function useStreamingChat({
 
   const modelRef = useRef<string>(model);
   modelRef.current = model;
+
+  const conversationIdRef = useRef(conversationId);
+  useEffect(() => {
+    conversationIdRef.current = conversationId;
+  }, [conversationId]);
+
+  /** Fire-and-forget: ask the server to generate an LLM-based title for this conversation. */
+  const generateTitle = useCallback(
+    async (cid: string) => {
+      try {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+        const res = await fetch(`/api/conversations/${cid}/generate-title`, {
+          method: 'POST',
+          headers,
+          credentials: 'include',
+        });
+        if (res.ok) {
+          onSidebarDirty?.();
+        }
+      } catch {
+        // title generation is best-effort; don't block the user
+      }
+    },
+    [accessToken, onSidebarDirty],
+  );
 
   // Load model labels from API for nicer system identity
   const [modelLabels, setModelLabels] = useState<Record<string, string>>({});
@@ -406,7 +433,19 @@ export function useStreamingChat({
 
         const baseHistory = (() => {
           const identityName = modelLabels[modelRef.current] ?? modelRef.current;
-          const defaultIdentity = `You are ${identityName}. Respond helpfully and thoroughly, using as much detail as the user's question warrants. Be concise only when the user asks for brevity or the question is simple. Do not mention your model name unless explicitly asked.`;
+          const defaultIdentity = `You are ${identityName}, a highly capable AI assistant.
+
+Response guidelines:
+- Provide comprehensive, detailed, and well-structured answers. Use headings, bullet points, numbered lists, and code blocks where appropriate.
+- Give thorough explanations with examples, context, and nuance. Do not give one-liner answers unless the question is truly trivial.
+- When explaining concepts, cover the "what", "why", and "how". Anticipate follow-up questions and address them proactively.
+- For technical questions, include working code examples, explain trade-offs, and mention best practices.
+- For factual questions, provide depth: background context, key details, and relevant implications.
+- Use markdown formatting liberally: **bold** for emphasis, headings (##) for sections, \`code\` for technical terms, and tables when comparing items.
+- If a question is ambiguous, address the most likely interpretation thoroughly, then briefly mention alternative interpretations.
+- Be direct and substantive. Avoid filler phrases like "Great question!" or "Sure, I'd be happy to help!". Get straight to the answer.
+- Only be brief when the user explicitly asks for brevity or the answer is genuinely simple (yes/no, a single fact, etc.).
+- Do not mention your model name, version, or architecture unless explicitly asked.`;
           const identity = SYSTEM_PROMPT_TEMPLATE
             ? SYSTEM_PROMPT_TEMPLATE.split('{model}').join(identityName)
             : defaultIdentity;
@@ -445,6 +484,7 @@ export function useStreamingChat({
 
         let finalAssistantText = '';
         let fallbackNotified = false;
+        let searchCleared = false;
 
         for await (const chunk of streamChat({
           apiUrl,
@@ -458,12 +498,20 @@ export function useStreamingChat({
             if (status.state === 'start') {
               setSearching(true);
               setSearchQuery(typeof status.query === 'string' ? status.query : null);
+            } else if (status.state === 'done') {
+              setSearching(false);
+              setSearchQuery(null);
+              searchCleared = true;
             }
             continue;
           }
           if (chunk) {
-            setSearching(false);
-            setSearchQuery(null);
+            // Safety net: clear searching state on first real chunk if backend didn't send 'done'
+            if (!searchCleared) {
+              setSearching(false);
+              setSearchQuery(null);
+              searchCleared = true;
+            }
             finalAssistantText += chunk;
             // Detect server-side fallback notice for GPT-5 quota and notify UI to switch picker
             if (!fallbackNotified && /gpt-5 daily limit reached/i.test(chunk)) {
@@ -484,7 +532,6 @@ export function useStreamingChat({
                 return out;
               });
             }
-            onSidebarDirty?.();
           }
         }
 
@@ -492,10 +539,28 @@ export function useStreamingChat({
           drainTypingBuffer(assistantMsg.id);
         }
 
+        // Strip any leaked search status markers from the final text
+        finalAssistantText = finalAssistantText.replace(/\[{3}SEARCH_STATUS\]{3}[^\n]*/g, '').trim();
+
         await appendMessages?.(
           userMsg,
           { ...assistantMsg, content: finalAssistantText },
         );
+
+        // Generate a smart title on the first exchange (only 1 user message in history)
+        const userMsgCount = msgsRef.current.filter((m) => m.role === 'user').length;
+        if (userMsgCount <= 1) {
+          // Get conversationId from ref or from URL search params (ref may lag behind state)
+          const cid =
+            conversationIdRef.current ||
+            (typeof window !== 'undefined'
+              ? new URLSearchParams(window.location.search).get('c')
+              : null);
+          if (cid) {
+            // Fire-and-forget — don't block the user
+            void generateTitle(cid);
+          }
+        }
       } catch (err: any) {
         if (/nano/i.test(modelRef.current)) {
           drainTypingBuffer(assistantMsg.id);
@@ -518,11 +583,11 @@ export function useStreamingChat({
       appendMessages,
       ensureConversation,
       conversationId,
-      onSidebarDirty,
       onError,
       setMsgs,
       loading,
       modelLabels,
+      generateTitle,
     ],
   );
 

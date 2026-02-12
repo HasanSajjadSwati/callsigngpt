@@ -28,6 +28,7 @@ type UseConversationReturn = {
   msgs: UIMsg[];
   setMsgs: React.Dispatch<React.SetStateAction<UIMsg[]>>;
   conversationId: string | null;
+  loadedModel: string | null;
   sidebarReloadKey: number;
   setSidebarReloadKey: React.Dispatch<React.SetStateAction<number>>;
   ensureConversation: () => Promise<void>;
@@ -90,6 +91,7 @@ export function useConversation(
   }, [msgs]);
 
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [loadedModel, setLoadedModel] = useState<string | null>(null);
   const [sidebarReloadKey, setSidebarReloadKey] = useState(0);
   const bumpSidebarReload = useCallback(
     () => setSidebarReloadKey((k) => k + APP_CONFIG.conversation.resetKeyIncrement),
@@ -117,6 +119,7 @@ export function useConversation(
     createdOnServer.current = false;
     isCreatingConversation.current = false;
     setConversationId(null);
+    setLoadedModel(null);
     pendingConversationId.current = null;
     pendingFolderIdRef.current = null;
     setMsgs(withTimestamps([greetingFnRef.current()]));
@@ -246,7 +249,9 @@ export function useConversation(
         }
       };
 
-      return (await tryLocal()) ?? (await tryExternal());
+      // Race both sources — use whichever succeeds first
+      const [local, external] = await Promise.all([tryLocal(), tryExternal()]);
+      return local ?? external;
     };
 
     (async () => {
@@ -268,6 +273,7 @@ export function useConversation(
           lastFailedConversationId.current = null;
           createdOnServer.current = true;
           setConversationId(convo.id);
+          if (convo.model) setLoadedModel(convo.model);
           const loaded: UIMsg[] = Array.isArray(convo.messages)
             ? withTimestamps(convo.messages)
             : [];
@@ -397,11 +403,9 @@ export function useConversation(
         
         const curr = search.get('c');
         if (curr !== newId) {
-          setTimeout(() => {
-            const url = new URL(window.location.href);
-            url.searchParams.set('c', newId);
-            router.replace(`${url.pathname}?${url.searchParams.toString()}`);
-          }, 500);
+          const url = new URL(window.location.href);
+          url.searchParams.set('c', newId);
+          router.replace(`${url.pathname}?${url.searchParams.toString()}`);
         }
       }
     } catch {
@@ -478,7 +482,7 @@ export function useConversation(
           // debounce saves to reduce flicker
           if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
           saveTimerRef.current = setTimeout(() => {
-            void sendConversationPatch(cid, updateBody, '[appendMessages]').finally(bumpSidebarReload);
+            void sendConversationPatch(cid, updateBody, '[appendMessages]');
           }, 300);
         }
         return timestampedNext;
@@ -500,7 +504,6 @@ export function useConversation(
             }
 
             await sendConversationPatch(cid, updateBody, '[appendMessages]');
-            bumpSidebarReload();
           }
         }, 200);
       }
@@ -508,7 +511,7 @@ export function useConversation(
       isCreatingConversation.current = false;
       pendingConversationId.current = null;
     },
-    [conversationId, sendConversationPatch, bumpSidebarReload],
+    [conversationId, sendConversationPatch],
   );
 
   /** Save current chat (explicit) */
@@ -537,6 +540,7 @@ export function useConversation(
     msgs,
     setMsgs,
     conversationId,
+    loadedModel,
     sidebarReloadKey,
     setSidebarReloadKey,
     ensureConversation,

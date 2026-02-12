@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'crypto';
+import { SUPABASE_ADMIN_CLIENT } from '../common/supabase/supabase-admin.token';
 
 export type AttachmentType = 'image' | 'file';
 
@@ -48,58 +50,106 @@ function deriveTitle(messages: Msg[] = [], providedTitle?: string, fallback = DE
 
 @Injectable()
 export class ConversationsService {
-  // userId -> (id -> conversation)
-  private store = new Map<string, Map<string, Conversation>>();
+  constructor(
+    @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabase: SupabaseClient,
+  ) {}
 
-  private userMap(userId: string) {
-    let m = this.store.get(userId);
-    if (!m) { m = new Map(); this.store.set(userId, m); }
-    return m;
+  async list(userId: string): Promise<Pick<Conversation, 'id' | 'title' | 'updatedAt'>[]> {
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .select('id, title, updated_at')
+      .eq('user_id', userId)
+      .order('updated_at', { ascending: false });
+    if (error) throw new InternalServerErrorException(error.message);
+    return (data ?? []).map((row: any) => ({
+      id: row.id,
+      title: row.title ?? DEFAULT_TITLE,
+      updatedAt: new Date(row.updated_at).getTime(),
+    }));
   }
 
-  list(userId: string): Pick<Conversation, 'id'|'title'|'updatedAt'>[] {
-    return Array.from(this.userMap(userId).values())
-      .sort((a,b) => b.updatedAt - a.updatedAt)
-      .map(c => ({ id: c.id, title: c.title, updatedAt: c.updatedAt }));
+  async get(userId: string, id: string): Promise<Conversation> {
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .select('*')
+      .eq('id', id)
+      .eq('user_id', userId)
+      .single();
+    if (error || !data) throw new NotFoundException('Conversation not found');
+    return {
+      id: data.id,
+      userId: data.user_id,
+      title: data.title ?? DEFAULT_TITLE,
+      messages: data.messages ?? [],
+      updatedAt: new Date(data.updated_at).getTime(),
+    };
   }
 
-  get(userId: string, id: string): Conversation {
-    const c = this.userMap(userId).get(id);
-    if (!c) throw new NotFoundException('Conversation not found');
-    return c;
-  }
-
-  create(userId: string, title = DEFAULT_TITLE, messages: Msg[] = []): Conversation {
+  async create(userId: string, title = DEFAULT_TITLE, messages: Msg[] = []): Promise<Conversation> {
     const id = randomUUID();
-    const now = Date.now();
+    const now = new Date().toISOString();
     const finalTitle = deriveTitle(messages, title);
-    const c: Conversation = { id, userId, title: finalTitle, messages, updatedAt: now };
-    this.userMap(userId).set(id, c);
-    return c;
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .insert({
+        id,
+        user_id: userId,
+        title: finalTitle,
+        messages,
+        updated_at: now,
+      })
+      .select('*')
+      .single();
+    if (error) throw new InternalServerErrorException(error.message);
+    return {
+      id: data.id,
+      userId: data.user_id,
+      title: data.title,
+      messages: data.messages ?? [],
+      updatedAt: new Date(data.updated_at).getTime(),
+    };
   }
 
-  update(userId: string, id: string, patch: Partial<Pick<Conversation,'title'|'messages'>>): Conversation {
-    const map = this.userMap(userId);
-    const c = map.get(id);
-    if (!c) throw new NotFoundException('Conversation not found');
+  async update(userId: string, id: string, patch: Partial<Pick<Conversation, 'title' | 'messages'>>): Promise<Conversation> {
+    // Fetch existing to apply title derivation logic
+    const existing = await this.get(userId, id);
 
-    const nextMessages = patch.messages ?? c.messages;
+    const nextMessages = patch.messages ?? existing.messages;
+    let nextTitle = existing.title;
     if (patch.title !== undefined) {
-      c.title = deriveTitle(nextMessages, patch.title, c.title || DEFAULT_TITLE);
-    } else if (!c.title || c.title.toLowerCase() === DEFAULT_TITLE.toLowerCase()) {
-      c.title = deriveTitle(nextMessages, undefined, c.title || DEFAULT_TITLE);
+      nextTitle = deriveTitle(nextMessages, patch.title, existing.title || DEFAULT_TITLE);
+    } else if (!existing.title || existing.title.toLowerCase() === DEFAULT_TITLE.toLowerCase()) {
+      nextTitle = deriveTitle(nextMessages, undefined, existing.title || DEFAULT_TITLE);
     }
-    if (patch.messages !== undefined) c.messages = patch.messages;
-    c.updatedAt = Date.now();
 
-    map.set(id, c);
-    return c;
+    const updates: Record<string, any> = { updated_at: new Date().toISOString(), title: nextTitle };
+    if (patch.messages !== undefined) updates.messages = patch.messages;
+
+    const { data, error } = await this.supabase
+      .from('conversations')
+      .update(updates)
+      .eq('id', id)
+      .eq('user_id', userId)
+      .select('*')
+      .single();
+    if (error) throw new InternalServerErrorException(error.message);
+    return {
+      id: data.id,
+      userId: data.user_id,
+      title: data.title,
+      messages: data.messages ?? [],
+      updatedAt: new Date(data.updated_at).getTime(),
+    };
   }
 
-  delete(userId: string, id: string) {
-    const map = this.userMap(userId);
-    const existed = map.delete(id);
-    if (!existed) throw new NotFoundException('Conversation not found');
+  async delete(userId: string, id: string) {
+    const { error, count } = await this.supabase
+      .from('conversations')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', userId);
+    if (error) throw new InternalServerErrorException(error.message);
+    if (count === 0) throw new NotFoundException('Conversation not found');
     return { ok: true };
   }
 }

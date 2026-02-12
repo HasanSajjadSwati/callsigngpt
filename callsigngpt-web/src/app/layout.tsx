@@ -1,6 +1,7 @@
 // app/layout.tsx
 import type { Metadata } from 'next';
 import './globals.css';
+import 'highlight.js/styles/github-dark-dimmed.css';
 import { AuthProvider } from '@/lib/auth';
 
 export const metadata: Metadata = {

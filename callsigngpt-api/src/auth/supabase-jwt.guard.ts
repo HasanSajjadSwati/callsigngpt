@@ -2,19 +2,33 @@ import {
   CanActivate,
   ExecutionContext,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { jwtVerify } from 'jose';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { AppConfigService } from '../config/app-config.service';
-import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
+import type { JwtPayload } from './jwt-payload';
 
 @Injectable()
 export class SupabaseJwtGuard implements CanActivate {
+  private readonly logger = new Logger(SupabaseJwtGuard.name);
+  private secretKey: Uint8Array | undefined;
+
   constructor(
     private readonly reflector: Reflector,
     private readonly config: AppConfigService,
   ) {}
+
+  /** Lazily create the HMAC key so the guard is injectable even before config is fully loaded. */
+  private getSecretKey(): Uint8Array {
+    if (!this.secretKey) {
+      const secret = this.config.supabaseJwtSecret;
+      this.secretKey = new TextEncoder().encode(secret);
+    }
+    return this.secretKey;
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     // 1) Allow @Public()
@@ -26,46 +40,28 @@ export class SupabaseJwtGuard implements CanActivate {
 
     const req = context.switchToHttp().getRequest();
 
-    const url = this.config.supabaseUrl;
-    const apiKey = this.config.supabaseAnonKey;
-
-    if (!url || !apiKey) {
-      throw new UnauthorizedException('Auth not configured');
-    }
-
     const auth = req.headers.authorization || '';
     const token = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : '';
     if (!token) throw new UnauthorizedException('Missing bearer token');
 
-    // Verify token with Supabase Auth REST
-    let res: Response;
+    // Verify JWT locally using the Supabase JWT secret (HS256)
+    let payload: JwtPayload;
     try {
-      res = await fetchWithTimeout(
-        `${url}/auth/v1/user`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            apikey: apiKey,
-          },
-        },
-        this.config.requestTimeoutMs,
-      );
-    } catch (error: any) {
-      const reason = error?.name === 'AbortError' ? 'timed out' : 'failed';
-      throw new UnauthorizedException(`Token validation ${reason}`);
-    }
-
-    if (!res.ok) {
+      const { payload: verified } = await jwtVerify(token, this.getSecretKey(), {
+        algorithms: ['HS256'],
+      });
+      payload = verified as unknown as JwtPayload;
+    } catch (err: any) {
+      this.logger.debug(`JWT verification failed: ${err?.code || err?.message}`);
       throw new UnauthorizedException('Invalid token');
     }
 
-    const user = await res.json(); // { id, email, ... }
-    if (!user?.id || !user?.email) {
+    if (!payload?.sub) {
       throw new UnauthorizedException('Invalid user payload');
     }
 
     // Attach to request for controllers
-    req.user = { id: user.id, email: user.email };
+    req.user = { id: payload.sub, email: payload.email ?? '' };
 
     return true;
   }

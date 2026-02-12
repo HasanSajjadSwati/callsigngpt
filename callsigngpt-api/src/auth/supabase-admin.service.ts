@@ -1,26 +1,23 @@
 // src/auth/supabase-admin.service.ts
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Inject, Injectable, InternalServerErrorException } from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { AppConfigService } from '../config/app-config.service';
 import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
+import { SUPABASE_ADMIN_CLIENT } from '../common/supabase/supabase-admin.token';
 
 @Injectable()
 export class SupabaseAdminService {
-  private readonly supabase: SupabaseClient;
   private readonly url: string;
   private readonly serviceKey: string;
   private readonly anonKey: string;
 
-  constructor(private readonly config: AppConfigService) {
+  constructor(
+    @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabase: SupabaseClient,
+    private readonly config: AppConfigService,
+  ) {
     this.url = this.config.supabaseUrl;
     this.serviceKey = this.config.supabaseServiceRoleKey;
     this.anonKey = this.config.supabaseAnonKey;
-
-    if (!this.url || !this.serviceKey) {
-      throw new InternalServerErrorException('Supabase env vars are missing');
-    }
-
-    this.supabase = createClient(this.url, this.serviceKey);
   }
 
   /**

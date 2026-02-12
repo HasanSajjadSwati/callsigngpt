@@ -316,6 +316,7 @@ export default function AccountPage() {
                   <input
                     className={`${inputClass} mt-2`}
                     placeholder="Your name"
+                    autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
@@ -327,6 +328,7 @@ export default function AccountPage() {
                     maxLength={16}
                     className={`${inputClass} mt-2`}
                     placeholder="+1 555 123 4567"
+                    autoComplete="tel"
                     value={phone}
                     onChange={(e) => {
                       const normalized = normalizePhoneInput(e.target.value);
@@ -394,6 +396,7 @@ export default function AccountPage() {
                   type="password"
                   className={`${inputClass} mt-2`}
                   placeholder="••••••••"
+                  autoComplete="current-password"
                   value={oldPassword}
                   onChange={(e) => setOldPassword(e.target.value)}
                   required
@@ -405,6 +408,7 @@ export default function AccountPage() {
                   type="password"
                   className={`${inputClass} mt-2`}
                   placeholder="New password"
+                  autoComplete="new-password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   required

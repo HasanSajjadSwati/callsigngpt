@@ -1,6 +1,7 @@
-import { Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { Inject, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { SupabaseClient } from '@supabase/supabase-js';
 import { AppConfigService } from '../config/app-config.service';
+import { SUPABASE_ADMIN_CLIENT } from '../common/supabase/supabase-admin.token';
 
 export type Provider =
   | 'openai'
@@ -31,17 +32,13 @@ type Cache = {
 @Injectable()
 export class ModelConfigService {
   private readonly logger = new Logger(ModelConfigService.name);
-  private readonly supabase: SupabaseClient;
   private cache?: Cache;
   private readonly cacheMs: number;
 
-  constructor(private readonly config: AppConfigService) {
-    const url = this.config.supabaseUrl;
-    const serviceKey = this.config.supabaseServiceRoleKey;
-    if (!url || !serviceKey) {
-      throw new Error('Supabase credentials missing for model config');
-    }
-    this.supabase = createClient(url, serviceKey);
+  constructor(
+    @Inject(SUPABASE_ADMIN_CLIENT) private readonly supabase: SupabaseClient,
+    private readonly config: AppConfigService,
+  ) {
     this.cacheMs = Math.max(0, Number(this.config.modelConfigCacheMs ?? 0));
   }
 

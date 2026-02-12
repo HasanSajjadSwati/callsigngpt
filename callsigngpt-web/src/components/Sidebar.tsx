@@ -533,7 +533,7 @@ export default function Sidebar({
   const initial = (name || 'U').slice(0, 1).toUpperCase();
 
   const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [plan, setPlan] = useState<string | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -654,17 +654,24 @@ export default function Sidebar({
     return () => {
       cancelled = true;
     };
-  }, [session, authHeaders, reloadKey]);
+  }, [session, authHeaders]);
+
+  // Track the previous reloadKey so we can distinguish initial mount from reload bumps
+  const prevReloadKeyRef = useRef(reloadKey);
 
   useEffect(() => {
     let cancelled = false;
+    const isReload = prevReloadKeyRef.current !== reloadKey;
+    prevReloadKeyRef.current = reloadKey;
 
     (async function load() {
-      setLoading(true);
+      if (!isReload) setLoading(true);
+
       const isAuthError = (err: any) => {
         const msg = (err?.message || '').toString().toLowerCase();
         return msg.includes('401') || msg.includes('unauthorized');
       };
+
       const loadFromLocalApi = async (): Promise<Item[]> => {
         const res = await fetch('/api/conversations', {
           cache: 'no-store',
@@ -675,19 +682,69 @@ export default function Sidebar({
         return normalizeItems(data);
       };
 
+      /** Silently merge server data into existing items — no flicker */
+      const mergeItems = (serverList: Item[]) => {
+        setItems((prev) => {
+          if (prev.length === 0) return serverList;
+          const serverMap = new Map(serverList.map((i) => [i.id, i]));
+          const prevMap = new Map(prev.map((i) => [i.id, i]));
+
+          const newIds = serverList.filter((i) => !prevMap.has(i.id));
+          const removedIds = prev.filter((i) => !serverMap.has(i.id));
+          const titleChanges = prev.filter((i) => {
+            const s = serverMap.get(i.id);
+            return s && s.title !== i.title;
+          });
+          const folderChanges = prev.filter((i) => {
+            const s = serverMap.get(i.id);
+            return s && s.folderId !== i.folderId;
+          });
+
+          if (
+            newIds.length === 0 &&
+            removedIds.length === 0 &&
+            titleChanges.length === 0 &&
+            folderChanges.length === 0
+          ) {
+            return prev;
+          }
+
+          const merged = prev
+            .filter((i) => serverMap.has(i.id))
+            .map((i) => {
+              const s = serverMap.get(i.id)!;
+              if (s.title !== i.title || s.folderId !== i.folderId || s.updatedAt !== i.updatedAt) {
+                return { ...i, title: s.title, folderId: s.folderId, updatedAt: s.updatedAt };
+              }
+              return i;
+            });
+          return [...newIds, ...merged];
+        });
+      };
+
+      const applyItems = (list: Item[]) => {
+        if (cancelled) return;
+        if (isReload) { mergeItems(list); } else { setItems(list); }
+      };
+
       try {
+        // Try local API first
         const localList = await loadFromLocalApi();
-        if (!cancelled && localList.length > 0) {
-          setItems(localList);
+        if (cancelled) return;
+
+        if (localList.length > 0) {
+          applyItems(localList);
           return;
         }
 
+        // Fall back to external API if local returned empty
         if (authedClient) {
           try {
             const data = await authedClient.get<{ conversations?: Item[] } | Item[]>('/conversations');
+            if (cancelled) return;
             const list = normalizeItems(data);
-            if (!cancelled && list.length > 0) {
-              setItems(list);
+            if (list.length > 0) {
+              applyItems(list);
               return;
             }
           } catch (err) {
@@ -697,19 +754,21 @@ export default function Sidebar({
           }
         }
 
-        if (!cancelled) setItems(localList);
+        // Both sources returned empty — set empty list
+        if (!cancelled) applyItems(localList);
       } catch (err) {
         if (!cancelled) {
           console.error('[Sidebar] failed to load conversations', err);
           try {
             const fallback = await loadFromLocalApi();
-            setItems(fallback);
+            if (!cancelled) applyItems(fallback);
           } catch {
-            setItems([]);
+            if (!cancelled && !isReload) setItems([]);
           }
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        // ALWAYS clear loading — even if cancelled, the next run will set it again if needed
+        if (!isReload) setLoading(false);
       }
     })();
 
@@ -717,53 +776,6 @@ export default function Sidebar({
       cancelled = true;
     };
   }, [reloadKey, authedClient, apiBase, isExternalApi, authHeaders]);
-
-  useEffect(() => {
-    if (reloadKey && reloadKey > 0 && !loading) {
-      const timeoutId = setTimeout(() => {
-        const refresh = async () => {
-          try {
-            if (authedClient) {
-              const data = await authedClient.get<{ conversations?: Item[] } | Item[]>('/conversations');
-              const list = normalizeItems(data);
-              if (list.length > 0) {
-                setItems(list);
-                return;
-              }
-            }
-          } catch (err) {
-            const msg = (err as any)?.message?.toString().toLowerCase() || '';
-            if (!msg.includes('401') && !msg.includes('unauthorized')) {
-              console.error('[Sidebar] background refresh (external) failed', err);
-            }
-          }
-
-          fetch('/api/conversations', {
-            cache: 'no-store',
-            credentials: 'include',
-            headers: { ...authHeaders } as HeadersInit,
-          })
-            .then((res) => (res.ok ? res.json() : { conversations: [] }))
-            .then((data) => {
-              setItems((prev) => {
-                const serverItems = normalizeItems(data);
-                if (serverItems.length > 0) {
-                  return serverItems;
-                }
-                return prev;
-              });
-            })
-            .catch(() => {
-              console.error('[Sidebar] background refresh failed');
-            });
-        };
-
-        void refresh();
-      }, 100);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [reloadKey, loading, authedClient, authHeaders]);
 
   const toggleFolderCollapse = (id: string) => {
     setCollapsedFolders((prev) => {

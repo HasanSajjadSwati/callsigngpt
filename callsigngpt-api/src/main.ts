@@ -6,7 +6,6 @@ import fastifyCors from '@fastify/cors';
 import fastifyRateLimit from '@fastify/rate-limit';
 import { envSchema } from './config/env.schema';
 import { AppConfigService } from './config/app-config.service';
-import { PrismaService } from './prisma/prisma.service';
 
 async function bootstrap() {
   const env = envSchema.parse(process.env);
@@ -53,9 +52,6 @@ async function bootstrap() {
 
   // (Optional but nice) handle graceful shutdowns
   app.enableShutdownHooks();
-  // Ensure Prisma disconnects cleanly on shutdown
-  const prisma = app.get(PrismaService);
-  await prisma.enableShutdownHooks(app);
 
   // (Optional) If you want a global API prefix:
   // app.setGlobalPrefix('v1');

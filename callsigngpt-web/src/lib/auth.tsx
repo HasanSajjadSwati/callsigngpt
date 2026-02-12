@@ -74,11 +74,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mounted = true;
 
     (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!mounted) return;
-      setSession((session as any) ?? null);
-      setLoading(false);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setSession((session as any) ?? null);
+      } catch (err) {
+        console.error('[Auth] getSession failed:', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
     })();
+
+    // Safety net: never stay loading for more than 5s
+    const timeout = setTimeout(() => {
+      if (mounted) setLoading(false);
+    }, 5000);
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
       setSession((sess as any) ?? null);
@@ -87,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       sub.subscription.unsubscribe();
+      clearTimeout(timeout);
       mounted = false;
     };
   }, []);

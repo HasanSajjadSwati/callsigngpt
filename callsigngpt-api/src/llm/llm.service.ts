@@ -92,26 +92,37 @@ export class LlmService {
     });
 
     const withPolicy = this.ensureSearchPolicy(normalized);
-    const searchQuery = this.extractSearchQuery(withPolicy);
+    const rawSearchQuery = this.extractSearchQuery(withPolicy);
     const searchMode = body?.search?.mode;
     const forceSearch = searchMode === 'always' || body?.forceSearch === true;
     const blockSearch = searchMode === 'off';
     const shouldSearch = Boolean(
-      searchQuery && !blockSearch && (forceSearch || this.shouldUseSearch(searchQuery)),
+      rawSearchQuery && !blockSearch && (forceSearch || this.shouldUseSearch(rawSearchQuery)),
     );
-    if (shouldSearch && searchQuery) {
-      yield this.formatSearchStatusChunk('start', searchQuery);
+
+    let enriched = withPolicy;
+    if (shouldSearch && rawSearchQuery) {
+      // Refine the raw user text into a concise, effective search query
+      const refinedQuery = await this.refineSearchQuery(rawSearchQuery, withPolicy);
+      yield this.formatSearchStatusChunk('start', refinedQuery);
+
+      // Determine if this is a freshness-sensitive query needing date restriction
+      const dateRestrict = this.detectDateRestrict(rawSearchQuery);
+
+      enriched = await this.maybeInjectSearch(withPolicy, {
+        query: refinedQuery,
+        force: true,
+        dateRestrict,
+      });
+      yield this.formatSearchStatusChunk('done', refinedQuery);
     }
-    const enriched = shouldSearch
-      ? await this.maybeInjectSearch(withPolicy, { query: searchQuery, force: true })
-      : withPolicy;
 
     const entry = await this.modelConfig.getModel(friendly);
 
     // Some models (e.g., GPT-5 Nano) only accept default temperature.
     const temperatureOverride =
-      /gpt-5/i.test(entry.providerModel) ? undefined : body.temperature ?? entry.temperatureDefault ?? 0.7;
-    const maxTokensOverride = body.max_tokens ?? entry.maxTokensDefault ?? undefined;
+      /gpt-5/i.test(entry.providerModel) ? undefined : body.temperature ?? entry.temperatureDefault ?? this.config.defaultTemperature;
+    const maxTokensOverride = body.max_tokens ?? entry.maxTokensDefault ?? this.config.defaultMaxTokens;
 
     const tried = new Set<string>();
     for await (const piece of this.streamWithEntry({
@@ -127,7 +138,7 @@ export class LlmService {
 
   private async maybeInjectSearch(
     messages: ChatMessage[],
-    opts: { query?: string | null; force?: boolean } = {},
+    opts: { query?: string | null; force?: boolean; dateRestrict?: string } = {},
   ): Promise<ChatMessage[]> {
     const query = opts.query ?? this.extractSearchQuery(messages);
     if (!query) return messages;
@@ -135,13 +146,33 @@ export class LlmService {
 
     let results: SearchResult[] = [];
     try {
-      results = await this.search.search(query, { num: 5 });
+      results = await this.search.search(query, {
+        num: 8,
+        dateRestrict: opts.dateRestrict,
+        fetchPages: true,
+        maxPageChars: 3000,
+      });
     } catch (err: any) {
       this.logger.warn(`Web search failed: ${err?.message || err}`);
       return messages;
     }
 
-    if (!results.length) return messages;
+    if (!results.length) {
+      // If date-restricted search returned nothing, retry without date restriction
+      if (opts.dateRestrict) {
+        this.logger.debug(`Date-restricted search returned 0 results, retrying without restriction`);
+        try {
+          results = await this.search.search(query, {
+            num: 8,
+            fetchPages: true,
+            maxPageChars: 3000,
+          });
+        } catch {
+          return messages;
+        }
+      }
+      if (!results.length) return messages;
+    }
 
     const injected: ChatMessage = {
       role: 'system',
@@ -164,25 +195,61 @@ export class LlmService {
       role: 'system',
       content: [
         'Search policy:',
-        '- Web search runs automatically for queries that are likely to need up-to-date information.',
-        '- Use web search results when they are provided in the system context.',
-        '- If asked whether you can browse or search the web, answer yes and say you will cite sources.',
-        '- If no web results are provided for this response, answer from existing knowledge and say you could not retrieve live results.',
+        '- You have real-time web search capabilities. Web search runs automatically for queries likely to need current or factual information.',
+        '- When web search results are provided in the system context, you MUST use them as your primary source and cite URLs inline (e.g., [Source Title](url)).',
+        '- When page content is provided alongside search results, use it for detailed, accurate answers rather than relying only on snippets.',
+        '- If asked whether you can browse or search the web, answer yes confidently.',
+        '- Always prefer information from the search results over your training data when the results are relevant.',
+        '- If search results contain dates, mention them to help the user assess freshness.',
+        '- If the search results seem outdated or irrelevant for the query, acknowledge this limitation.',
       ].join('\n'),
     };
 
     return this.insertAfterSystem(messages, policy);
   }
 
+  /**
+   * Extract a search query from the conversation.
+   * Uses the last user message as the primary source, but also considers
+   * recent conversation context for follow-up questions like "what about today?"
+   */
   private extractSearchQuery(messages: ChatMessage[]): string | null {
+    // Find the last user message
+    let lastUserIdx = -1;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
-      const msg = messages[i];
-      if (msg.role !== 'user') continue;
-      const text = this.messageToText(msg.content);
-      const cleaned = this.sanitizeSearchText(text);
-      return cleaned || null;
+      if (messages[i].role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
     }
-    return null;
+    if (lastUserIdx === -1) return null;
+
+    const lastUserText = this.messageToText(messages[lastUserIdx].content);
+    const cleaned = this.sanitizeSearchText(lastUserText);
+    if (!cleaned) return null;
+
+    // If the last user message is short and appears to be a follow-up,
+    // prepend context from the preceding user/assistant exchange
+    const isLikelyFollowUp =
+      cleaned.length < 60 &&
+      /^(what|how|when|where|who|why|which|is|are|was|were|did|does|do|can|could|will|would|should|and|but|also|tell me|show me|find|any|more)\b/i.test(cleaned);
+
+    if (isLikelyFollowUp && lastUserIdx >= 2) {
+      // Grab the previous user message for topic context
+      for (let i = lastUserIdx - 1; i >= 0; i -= 1) {
+        if (messages[i].role === 'user') {
+          const prevText = this.sanitizeSearchText(this.messageToText(messages[i].content));
+          if (prevText && prevText.length > 5) {
+            // Combine: "previous topic" + "follow-up question"
+            const combined = `${prevText.slice(0, 120)} ${cleaned}`;
+            return this.sanitizeSearchText(combined) || cleaned;
+          }
+          break;
+        }
+      }
+    }
+
+    return cleaned;
   }
 
   private messageToText(content: ChatMessage['content']): string {
@@ -207,7 +274,7 @@ export class LlmService {
       }
     }
     out = out.replace(/\s+/g, ' ').trim();
-    if (out.length > 256) out = out.slice(0, 256).trim();
+    if (out.length > 400) out = out.slice(0, 400).trim();
     return out;
   }
 
@@ -216,67 +283,260 @@ export class LlmService {
     const trimmed = normalized.trim();
     if (trimmed.length < 6) return false;
 
+    // ── Instant reject: user explicitly opts out ──
     const optOut =
-      /\b(no\s+search|don't\s+search|do\s+not\s+search|without\s+search|no\s+web|offline|from\s+memory)\b/;
+      /\b(no\s+search|don't\s+search|do\s+not\s+search|without\s+search|no\s+web|offline|from\s+memory|don't\s+browse|do\s+not\s+browse)\b/;
     if (optOut.test(trimmed)) return false;
 
+    // ── Instant accept: user explicitly wants search ──
     const explicit =
-      /\b(search|google|browse|web|online|look\s*up|lookup|check\s+online)\b/;
+      /\b(search\s+(for|the|online|web)|google\s+it|browse\s+the\s+web|look\s*up|lookup|check\s+online|find\s+online|search\s+online|web\s+search|search\s+the\s+web|google\s+for)\b/;
     if (explicit.test(trimmed)) return true;
 
-    const freshness =
-      /\b(latest|recent|today|now|current|currently|as of|up[- ]?to[- ]?date|this week|this month|this year|breaking|news|update|updated|newest|live|just announced|recently)\b/;
-    const dynamic =
-      /\b(price|stock|quote|exchange rate|rate|weather|forecast|score|standings|odds|availability|release date|launch|earnings|filing|results|schedule|timetable|tickets|traffic|outage|incident|status|downtime|service status|pricing|plans|plan|roadmap|changelog|version)\b/;
-    const timeRef =
-      /\b(20\d{2}|yesterday|tomorrow|last week|next week|last month|next month|last year|next year|q[1-4])\b/;
-    const verification =
-      /\b(confirm|verify|check|lookup|find|show|source|cite|link)\b/;
-
-    const summarize =
-      /\b(summarize|rewrite|paraphrase|translate|proofread|edit|grammar|fix typos)\b/;
-    const creative =
-      /\b(write|draft|story|poem|lyrics|roleplay|fiction|creative|dialogue)\b/;
-    const coding =
-      /```|`[^`]+`|\b(stack trace|exception|error|bug|compile|typescript|javascript|python|java|c\+\+|c#|rust|golang|node\.js)\b/;
-    const math =
-      /\b(derive|solve|integral|theorem|proof|equation|calculate|simplify)\b/;
-
+    // ── Scoring system ──
     let score = 0;
+
+    // --- Strong signals for search (+3 each) ---
+
+    // Freshness: user wants current/recent/latest info
+    const freshness =
+      /\b(latest|recent|recently|today|right now|now|current|currently|as of|up[- ]?to[- ]?date|this week|this month|this year|breaking|news|update|updated|newest|live|just announced|just released|just happened|trending|ongoing|happening)\b/;
     if (freshness.test(trimmed)) score += 3;
+
+    // Dynamic/real-time data that changes frequently
+    const dynamic =
+      /\b(price|prices|pricing|stock|stocks|market|quote|exchange rate|rate|rates|weather|forecast|score|scores|standings|odds|availability|release date|release|launched|launches|earnings|filing|results|schedule|timetable|tickets|traffic|outage|incident|status|downtime|service status|salary|salaries|cost|revenue|valuation|market cap|gdp|inflation|unemployment|interest rate|poll|polls|election|vote|votes)\b/;
     if (dynamic.test(trimmed)) score += 3;
+
+    // --- Medium signals (+2 each) ---
+
+    // Question words asking for factual info (who/what/when/where)
+    const factualQuestion =
+      /\b(who is|who are|who was|who were|who won|who invented|who founded|who created|what is|what are|what was|what were|what happened|when is|when was|when did|when will|when does|where is|where are|where was|where can|how much|how many|how old|how tall|how far|how long does)\b/;
+    if (factualQuestion.test(trimmed)) score += 2;
+
+    // Time references (recent years, relative time)
+    // Only match years 2023+ as likely wanting current info
+    const timeRef =
+      /\b(202[3-9]|20[3-9]\d|yesterday|tomorrow|last week|next week|last month|next month|last year|next year|q[1-4]\s*20\d{2}|this quarter|last quarter)\b/;
     if (timeRef.test(trimmed)) score += 2;
+
+    // Verification / fact-checking
+    const verification =
+      /\b(confirm|verify|fact[- ]?check|check|source|sources|cite|citation|reference|references|link|links|proof|evidence|according to)\b/;
     if (verification.test(trimmed)) score += 2;
 
-    let penalty = 0;
-    if (summarize.test(trimmed)) penalty += 2;
-    if (creative.test(trimmed)) penalty += 2;
-    if (coding.test(trimmed)) penalty += 2;
-    if (math.test(trimmed)) penalty += 2;
+    // Comparisons that often need current data
+    const comparison =
+      /\b(compare|comparison|vs\.?|versus|better than|best|top\s+\d+|ranking|ranked|benchmark|benchmarks|alternative|alternatives|competitor|competitors)\b/;
+    if (comparison.test(trimmed)) score += 2;
 
-    return score - penalty >= 2;
+    // Named entities that suggest factual lookup (people, companies, products, places)
+    const namedEntity =
+      /\b(ceo|cto|president|prime minister|founder|company|corporation|startup|government|ministry|agency|university|country|city|capital|population|wikipedia)\b/;
+    if (namedEntity.test(trimmed)) score += 2;
+
+    // --- Weak signals (+1 each) ---
+
+    // Question marks suggest information-seeking
+    if (/\?/.test(trimmed)) score += 1;
+
+    // "How to" questions that might need current guides
+    const howTo = /\b(how to|how do|how can|how should|steps to|guide|tutorial|walkthrough|instructions)\b/;
+    if (howTo.test(trimmed)) score += 1;
+
+    // Specific product/tech names that change often
+    const techProducts =
+      /\b(iphone|ipad|macbook|pixel|galaxy|windows|macos|ios|android|chrome|firefox|safari|chatgpt|gpt[- ]?\d|gemini|claude|openai|google|microsoft|apple|amazon|meta|nvidia|tesla|spacex|bitcoin|ethereum|crypto)\b/;
+    if (techProducts.test(trimmed)) score += 1;
+
+    // Regulatory / legal / policy questions
+    const regulatory =
+      /\b(law|legal|regulation|policy|legislation|act|bill|ruling|court|supreme court|ban|banned|approved|fda|sec|eu|regulation|sanctions|tariff|tax)\b/;
+    if (regulatory.test(trimmed)) score += 1;
+
+    // Sports, entertainment, events
+    const eventsEntertainment =
+      /\b(game|match|tournament|championship|world cup|olympics|super bowl|grammy|oscar|emmy|concert|festival|show|episode|season|premiere|trailer|movie|film|album|song|award)\b/;
+    if (eventsEntertainment.test(trimmed)) score += 1;
+
+    // Health / medical queries users often want current info on
+    const health =
+      /\b(covid|vaccine|pandemic|outbreak|virus|disease|treatment|drug|medication|fda approved|clinical trial|symptoms|diagnosis|cure|side effects|recall)\b/;
+    if (health.test(trimmed)) score += 1;
+
+    // --- Penalties (reduce score) ---
+
+    // Summarization / editing tasks (user has the content already)
+    const summarize =
+      /\b(summarize|rewrite|paraphrase|translate|proofread|edit|grammar|fix typos|rephrase|shorten|simplify this|explain this code)\b/;
+    if (summarize.test(trimmed)) score -= 3;
+
+    // Creative writing tasks
+    const creative =
+      /\b(write me|write a|draft a|story|poem|lyrics|roleplay|fiction|creative|dialogue|letter|essay|speech|toast|joke|riddle)\b/;
+    if (creative.test(trimmed)) score -= 3;
+
+    // Pure coding tasks
+    const coding =
+      /```|`[^`]+`|\b(stack trace|exception|error log|compile|refactor|debug|function|class|method|typescript|javascript|python|java\b|c\+\+|c#|rust|golang|node\.js|react|angular|vue|sql|query|database|api endpoint|algorithm|data structure|binary tree)\b/;
+    if (coding.test(trimmed)) score -= 3;
+
+    // Pure math / theoretical
+    const math =
+      /\b(derive|solve|integral|theorem|proof|equation|calculate|simplify|matrix|eigenvalue|differential|polynomial|factorial)\b/;
+    if (math.test(trimmed)) score -= 3;
+
+    // Conversational / greeting (never needs search)
+    const conversational =
+      /^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no|got it|understood|good|great|nice|cool|awesome|bye|goodbye|see you)\b/;
+    if (conversational.test(trimmed)) score -= 5;
+
+    // Very short inputs that are likely conversational
+    if (trimmed.length < 15 && score <= 0) return false;
+
+    return score >= 2;
   }
 
   private formatSearchMessage(query: string, results: SearchResult[]): string {
     const lines = [
-      'Web search results (Google Custom Search).',
+      'Web search results (live, retrieved just now).',
       `Query: ${query}`,
       `Retrieved: ${new Date().toISOString()}`,
       '',
       'Results:',
       ...results.map((result, idx) => {
-        const snippet = result.snippet ? `Snippet: ${result.snippet}` : 'Snippet:';
-        return `${idx + 1}. ${result.title}\n${result.link}\n${snippet}`;
+        const parts: string[] = [];
+        parts.push(`${idx + 1}. ${result.title}`);
+        parts.push(`   URL: ${result.link}`);
+        if (result.date) parts.push(`   Date: ${result.date}`);
+        if (result.snippet) parts.push(`   Snippet: ${result.snippet}`);
+        if (result.pageContent) {
+          parts.push(`   Page content: ${result.pageContent}`);
+        }
+        return parts.join('\n');
       }),
       '',
-      'Use these results to answer the user. Cite sources by URL.',
+      'Instructions:',
+      '- Use these search results as your PRIMARY source for answering the user\'s question.',
+      '- Cite sources inline using markdown links: [Source Title](url)',
+      '- When page content is available, prefer it over snippets for detailed answers.',
+      '- If results have dates, mention the recency of information.',
+      '- If none of the results directly answer the question, say so honestly.',
     ];
 
     return lines.join('\n');
   }
 
-  private formatSearchStatusChunk(state: 'start', query: string): string {
+  private formatSearchStatusChunk(state: 'start' | 'done', query: string): string {
     return `${SEARCH_STATUS_PREFIX}${JSON.stringify({ state, query })}`;
+  }
+
+  /**
+   * Detect whether this query needs date-restricted search results.
+   * Returns a Google dateRestrict string like "d1" (past day), "w1" (past week), etc.
+   */
+  private detectDateRestrict(text: string): string | undefined {
+    const lower = text.toLowerCase();
+
+    // Today / right now / just happened
+    if (/\b(today|right now|just now|just happened|breaking|this morning|tonight|this afternoon)\b/.test(lower)) {
+      return 'd1'; // past 1 day
+    }
+
+    // This week / recent days
+    if (/\b(this week|past few days|last few days|recent days)\b/.test(lower)) {
+      return 'w1'; // past 1 week
+    }
+
+    // This month / past weeks
+    if (/\b(this month|past week|last week|past couple weeks|recent weeks)\b/.test(lower)) {
+      return 'm1'; // past 1 month
+    }
+
+    // This year / past months
+    if (/\b(this year|past month|last month|recent months|past few months)\b/.test(lower)) {
+      return 'm3'; // past 3 months
+    }
+
+    // Current year reference
+    const currentYear = new Date().getFullYear();
+    if (new RegExp(`\\b${currentYear}\\b`).test(lower)) {
+      return 'y1'; // past 1 year
+    }
+
+    // Generic freshness keywords — use past month as sensible default
+    if (/\b(latest|newest|recent|recently|current|currently|up[- ]?to[- ]?date|trending|ongoing)\b/.test(lower)) {
+      return 'm1'; // past 1 month
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Use a fast LLM call to refine the raw user text into a concise, effective Google search query.
+   * Falls back to the raw text if the refinement fails.
+   */
+  private async refineSearchQuery(rawQuery: string, messages: ChatMessage[]): Promise<string> {
+    // For short, already-focused queries, skip refinement
+    if (rawQuery.length < 40 && !/\b(it|this|that|they|them|those|these|he|she|his|her)\b/i.test(rawQuery)) {
+      return rawQuery;
+    }
+
+    try {
+      const apiKey = await this.secrets.get('OPENAI_API_KEY');
+      if (!apiKey) return rawQuery;
+
+      // Build minimal context: last 3 user/assistant messages
+      const recentContext = messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .slice(-4)
+        .map((m) => {
+          const text = this.messageToText(m.content);
+          return `${m.role}: ${text.slice(0, 150)}`;
+        })
+        .join('\n');
+
+      const resp = await fetchWithTimeout(
+        'https://api.openai.com/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            max_tokens: 60,
+            temperature: 0,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You convert user messages into concise Google search queries. Output ONLY the search query text, nothing else. Keep it under 12 words. Include the current year if the user wants recent information. Do not add quotes unless needed for exact phrases.',
+              },
+              {
+                role: 'user',
+                content: `Conversation context:\n${recentContext}\n\nUser's latest message: "${rawQuery}"\n\nCurrent date: ${new Date().toISOString().split('T')[0]}\n\nGenerate a concise Google search query:`,
+              },
+            ],
+          }),
+        },
+        5000, // 5 second timeout — must be fast
+      );
+
+      if (!resp.ok) return rawQuery;
+      const json = await resp.json().catch(() => null);
+      const refined = json?.choices?.[0]?.message?.content?.trim();
+      if (refined && refined.length >= 3 && refined.length < 150) {
+        this.logger.debug(`Refined search query: "${rawQuery}" → "${refined}"`);
+        return refined;
+      }
+    } catch (err: any) {
+      this.logger.debug(`Search query refinement failed (using raw): ${err?.message}`);
+    }
+
+    return rawQuery;
   }
 
   private insertAfterSystem(messages: ChatMessage[], injected: ChatMessage): ChatMessage[] {
@@ -329,7 +589,7 @@ export class LlmService {
                     .join('\n\n')
                 : msg.content,
             })),
-            temperature: temperature ?? 0.7,
+            temperature: temperature ?? this.config.defaultTemperature,
             max_tokens: maxTokens,
           }))
             yield piece;
@@ -349,8 +609,8 @@ export class LlmService {
                     .join('\n\n')
                 : msg.content,
             })),
-            temperature: temperature ?? 0.7,
-            max_tokens: maxTokens ?? 1024,
+            temperature: temperature ?? this.config.defaultTemperature,
+            max_tokens: maxTokens ?? this.config.defaultMaxTokens,
           }))
             yield piece;
           return;
@@ -369,7 +629,7 @@ export class LlmService {
                     .join('\n\n')
                 : msg.content,
             })),
-            temperature: temperature ?? 0.7,
+            temperature: temperature ?? this.config.defaultTemperature,
             max_tokens: maxTokens,
           }))
             yield piece;
@@ -389,7 +649,7 @@ export class LlmService {
                     .join('\n\n')
                 : msg.content,
             })),
-            temperature: temperature ?? 0.7,
+            temperature: temperature ?? this.config.defaultTemperature,
             max_tokens: maxTokens,
           }))
             yield piece;
@@ -409,7 +669,7 @@ export class LlmService {
                     .join('\n\n')
                 : msg.content,
             })),
-            temperature: temperature ?? 0.7,
+            temperature: temperature ?? this.config.defaultTemperature,
             max_tokens: maxTokens,
           }))
             yield piece;
@@ -645,7 +905,7 @@ private async *streamGoogleGemini(opts: {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
     opts.model,
-  )}:streamGenerateContent?key=${encodeURIComponent(apiKey)}`;
+  )}:streamGenerateContent?alt=sse`;
 
   const payload: any = {
     contents,
@@ -658,7 +918,10 @@ private async *streamGoogleGemini(opts: {
 
   const resp = await this.fetchWithUpstreamTimeout('Gemini', url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
     body: JSON.stringify(payload),
   });
 
@@ -683,12 +946,20 @@ private async *streamGoogleGemini(opts: {
     buffer += chunk;
     rawFull += chunk;
 
-    // Try NDJSON mode first (one JSON per line)
+    // Parse SSE / NDJSON lines
     let nl: number;
     while ((nl = buffer.indexOf('\n')) !== -1) {
-      const line = buffer.slice(0, nl).trim();
+      let line = buffer.slice(0, nl).trim();
       buffer = buffer.slice(nl + 1);
       if (!line) continue;
+
+      // Strip SSE "data: " prefix (alt=sse mode)
+      if (line.startsWith('data: ')) {
+        line = line.slice(6);
+      } else if (line.startsWith('data:')) {
+        line = line.slice(5);
+      }
+      if (!line || line === '[DONE]') continue;
 
       try {
         const obj = JSON.parse(line);
@@ -710,12 +981,18 @@ private async *streamGoogleGemini(opts: {
 
   // Fallback: The API sent one full JSON instead of NDJSON lines
   if (totalYielded === 0) {
-    const all = rawFull.trim();
-    try {
-      const parsed = JSON.parse(all);
-      const frames = Array.isArray(parsed) ? parsed : [parsed];
+    // Strip SSE "data: " prefixes from the raw response and concatenate JSON objects
+    const stripped = rawFull
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l && l !== '[DONE]')
+      .map((l) => (l.startsWith('data: ') ? l.slice(6) : l.startsWith('data:') ? l.slice(5) : l))
+      .filter(Boolean);
 
-      for (const obj of frames) {
+    // Try to parse each stripped line individually first
+    for (const jsonStr of stripped) {
+      try {
+        const obj = JSON.parse(jsonStr);
         const text =
           obj?.candidates?.[0]?.content?.parts?.[0]?.text ??
           obj?.candidates?.[0]?.content?.parts
@@ -726,9 +1003,33 @@ private async *streamGoogleGemini(opts: {
           totalYielded += text.length;
           yield text;
         }
+      } catch {
+        // not valid JSON on its own, try full blob below
       }
-    } catch {
-      throw new InternalServerErrorException('Gemini stream parse failed');
+    }
+
+    // If still nothing, try parsing the entire raw blob as one JSON
+    if (totalYielded === 0) {
+      const all = rawFull.trim();
+      try {
+        const parsed = JSON.parse(all);
+        const frames = Array.isArray(parsed) ? parsed : [parsed];
+
+        for (const obj of frames) {
+          const text =
+            obj?.candidates?.[0]?.content?.parts?.[0]?.text ??
+            obj?.candidates?.[0]?.content?.parts
+              ?.map((p: any) => p?.text)
+              .filter(Boolean)
+              .join('');
+          if (typeof text === 'string' && text.length > 0) {
+            totalYielded += text.length;
+            yield text;
+          }
+        }
+      } catch {
+        throw new InternalServerErrorException('Gemini stream parse failed');
+      }
     }
   }
 }
