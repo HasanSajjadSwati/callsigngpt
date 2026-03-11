@@ -10,7 +10,10 @@ type StatusDialogProps = {
   message: string;
   variant?: StatusVariant;
   primaryText?: string;
+  secondaryText?: string;
+  secondaryHref?: string;
   onClose: () => void;
+  onSecondary?: () => void;
 };
 
 const variantStyles: Record<StatusVariant, { tone: string }> = {
@@ -31,7 +34,10 @@ export default function StatusDialog({
   message,
   variant = 'info',
   primaryText = 'Close',
+  secondaryText,
+  secondaryHref,
   onClose,
+  onSecondary,
 }: StatusDialogProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
@@ -127,11 +133,32 @@ export default function StatusDialog({
             {message}
           </p>
 
-          <div className="mt-3 flex justify-center">
+          <div className={`mt-3 flex justify-center ${secondaryText ? 'gap-2' : ''}`}>
+            {secondaryText && (
+              secondaryHref ? (
+                <a
+                  href={secondaryHref}
+                  onClick={() => onSecondary?.()}
+                  className="flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-center text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+                >
+                  {secondaryText}
+                </a>
+              ) : (
+                <button
+                  onClick={() => {
+                    onSecondary?.();
+                    onClose();
+                  }}
+                  className="flex-1 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+                >
+                  {secondaryText}
+                </button>
+              )
+            )}
             <button
               ref={buttonRef}
               onClick={onClose}
-              className="w-full rounded-xl accent-button px-3 py-2 text-sm font-semibold"
+              className={`${secondaryText ? 'flex-1' : 'w-full'} rounded-xl accent-button px-3 py-2 text-sm font-semibold`}
             >
               {primaryText}
             </button>

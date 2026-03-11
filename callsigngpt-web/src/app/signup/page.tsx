@@ -7,6 +7,8 @@ import { normalizePhoneInput } from '@/lib/phone';
 import { COUNTRY_OPTIONS } from '@/lib/countries';
 import StatusDialog from '@/components/StatusDialog';
 import { GoogleAuthButton } from '@/components/GoogleAuthButton';
+import PricingPlans from '@/components/PricingPlans';
+import type { PricingPlan } from '@/lib/pricing';
 
 const DEFAULT_COUNTRY =
   COUNTRY_OPTIONS[0] ?? { iso: 'US', name: 'United States', dialCode: '+1', flag: 'placeholder' };
@@ -394,6 +396,28 @@ export default function SignupPage() {
           Powered By Strativ
         </a>
       </footer>
+
+      {/* Pricing Plans Section */}
+      <section className="relative mx-auto w-full max-w-6xl mt-8 mb-12">
+        <div className="glass-panel gradient-border rounded-[32px] border border-white/10 p-6 sm:p-8 shadow-[0_30px_120px_rgba(2,6,23,.6)]">
+          <div className="mb-6 text-center space-y-2">
+            <p className="text-[11px] uppercase tracking-[0.35em] text-pink-100/90">Pricing</p>
+            <h2 className="text-2xl font-semibold text-white sm:text-3xl">Choose Your Plan</h2>
+            <p className="text-sm text-zinc-400">Unlock powerful AI models and extended limits</p>
+          </div>
+          <PricingPlans
+            currentPlan="free"
+            onSelectPlan={(plan: PricingPlan) => {
+              // For now, show a message that plans will be available soon
+              setStatusDialog({
+                open: true,
+                title: 'Coming Soon',
+                message: `${plan.name} plan will be available after you create your account.`,
+              });
+            }}
+          />
+        </div>
+      </section>
     </main>
   );
 }

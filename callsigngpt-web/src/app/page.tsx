@@ -208,6 +208,8 @@ function HomeInner() {
     title: string;
     message: string;
     variant?: 'error' | 'success' | 'info';
+    secondaryText?: string;
+    secondaryHref?: string;
   }>({ open: false, title: '', message: '', variant: 'error' });
 
   // Streaming chat
@@ -220,19 +222,25 @@ function HomeInner() {
     appendMessages,
     conversationId,
     onSidebarDirty: () => setSidebarReloadKey((k) => k + 1),
-    onError: (message) =>
+    onError: (message) => {
+      const isLimitError = /quota|limit/i.test(message || '');
       setStatusDialog({
         open: true,
-        title: /quota|limit/i.test(message || '') ? 'Limit reached' : 'Error',
+        title: isLimitError ? 'Limit reached' : 'Error',
         message: normalizeErrorMessage(message || ''),
         variant: 'error',
-      }),
+        secondaryText: isLimitError ? 'View Plans' : undefined,
+        secondaryHref: isLimitError ? '/account' : undefined,
+      });
+    },
     onModelFallback: (fallbackKey) => {
       setStatusDialog({
         open: true,
         title: 'Fallback to free model',
         message: 'GPT-5 daily limit reached. Switching to GPT-4o Mini (free).',
         variant: 'info',
+        secondaryText: 'Upgrade Plan',
+        secondaryHref: '/account',
       });
       setModelAndPersist(fallbackKey);
     },
@@ -559,6 +567,8 @@ function HomeInner() {
         title={statusDialog.title}
         message={statusDialog.message}
         variant={statusDialog.variant ?? 'error'}
+        secondaryText={statusDialog.secondaryText}
+        secondaryHref={statusDialog.secondaryHref}
         onClose={() =>
           setStatusDialog({ open: false, title: '', message: '', variant: 'error' })
         }

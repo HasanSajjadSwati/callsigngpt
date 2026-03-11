@@ -6,8 +6,10 @@ import { useAuth } from '@/lib/auth';
 import { isValidPhoneLength, normalizePhoneInput } from '@/lib/phone';
 import ConfirmDialog from '@/components/ConfirmDialog';
 import StatusDialog from '@/components/StatusDialog';
+import PricingPlans, { PricingBadge } from '@/components/PricingPlans';
 import { getApiBase } from '@/lib/apiBase';
 import { HttpClient } from '@/lib/httpClient';
+import type { PricingPlan } from '@/lib/pricing';
 
 type MeResponse = {
   id: string;
@@ -59,7 +61,6 @@ export default function AccountPage() {
     setStatusDialog({ open: true, title, message, variant });
   };
 
-  const formattedPlan = 'Free';
   const inputClass =
     'w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 focus:border-emerald-300/50 transition backdrop-blur';
   const cardClass =
@@ -174,11 +175,6 @@ export default function AccountPage() {
     }
   }
 
-  async function updatePlan(e: React.FormEvent) {
-    e.preventDefault();
-    showStatusDialog('Plan updates unavailable', 'Only the free plan is available right now.', 'info');
-  }
-
   async function clearConversationHistoryRequest() {
     const res = await fetch('/api/conversations/clear', {
       method: 'POST',
@@ -273,9 +269,7 @@ export default function AccountPage() {
             <div className="space-y-3 rounded-2xl border border-white/10 bg-white/5 p-5 text-sm backdrop-blur">
               <div className="flex items-center justify-between text-zinc-400">
                 <span>Current plan</span>
-                <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-emerald-400">
-                  {formattedPlan}
-                </span>
+                <PricingBadge plan={plan} />
               </div>
               <div className="text-zinc-300">
                 <p className="text-lg font-semibold text-white">{email}</p>
@@ -353,33 +347,19 @@ export default function AccountPage() {
           <section className={`${cardClass} space-y-6 lg:col-span-2`}>
             <div className="space-y-1">
               <span className={pillClass}>Plan</span>
-              <p className="text-sm text-zinc-400">Only the free plan is available right now.</p>
+              <p className="text-sm text-zinc-400">Upgrade your plan for more models and extended limits.</p>
             </div>
-            <form onSubmit={updatePlan} className="space-y-4">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-                  Choose plan
-                </label>
-                <select
-                  className={`${inputClass} mt-2 appearance-none cursor-not-allowed`}
-                  value={plan}
-                  onChange={(e) => setPlan(e.target.value)}
-                  disabled
-                >
-                  <option value="free" className="text-black">
-                    Free
-                  </option>
-                </select>
-              </div>
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center rounded-2xl bg-gradient-to-r from-emerald-400 via-sky-400 to-cyan-400 px-5 py-2.5 text-sm font-semibold text-black shadow-lg shadow-emerald-500/30 disabled:opacity-60"
-                disabled
-              >
-                Update plan
-              </button>
-              <p className="text-xs text-zinc-500">Plan upgrades are temporarily disabled.</p>
-            </form>
+            <PricingPlans
+              currentPlan={plan}
+              compact
+              onSelectPlan={(selectedPlan: PricingPlan) => {
+                showStatusDialog(
+                  'Upgrade Coming Soon',
+                  `${selectedPlan.name} plan upgrades will be available soon. Stay tuned!`,
+                  'info'
+                );
+              }}
+            />
           </section>
         </div>
 
