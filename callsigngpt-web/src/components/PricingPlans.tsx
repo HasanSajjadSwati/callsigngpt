@@ -41,7 +41,10 @@ export default function PricingPlans({ currentPlan = 'free', onSelectPlan, compa
                 {formatPrice(plan.price, plan.currency)}
               </span>
               {plan.price !== null && (
-                <span className="text-sm text-zinc-400">{plan.period}</span>
+                <>
+                  <span className="text-sm text-zinc-400">{plan.period}</span>
+                  <span className="ml-1 text-xs text-zinc-500">+Tax</span>
+                </>
               )}
             </div>
 
