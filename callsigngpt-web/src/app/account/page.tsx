@@ -343,15 +343,15 @@ export default function AccountPage() {
               </button>
             </form>
           </section>
+        </div>
 
-          <section className={`${cardClass} space-y-6 lg:col-span-2`}>
+          <section className={`${cardClass} space-y-6`}>
             <div className="space-y-1">
               <span className={pillClass}>Plan</span>
               <p className="text-sm text-zinc-400">Upgrade your plan for more models and extended limits.</p>
             </div>
             <PricingPlans
               currentPlan={plan}
-              compact
               onSelectPlan={(selectedPlan: PricingPlan) => {
                 showStatusDialog(
                   'Upgrade Coming Soon',
@@ -361,7 +361,6 @@ export default function AccountPage() {
               }}
             />
           </section>
-        </div>
 
         <div className="grid gap-6 lg:grid-cols-5">
           <section className={`${cardClass} space-y-6 lg:col-span-3`}>
