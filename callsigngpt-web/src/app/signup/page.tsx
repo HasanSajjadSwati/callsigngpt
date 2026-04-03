@@ -60,6 +60,7 @@ export default function SignupPage() {
     title: string;
     message: string;
   }>({ open: false, title: '', message: '' });
+  const [confirmationDialog, setConfirmationDialog] = useState(false);
   const selectedCountry =
     COUNTRY_OPTIONS.find((option) => option.iso === selectedCountryIso) ?? DEFAULT_COUNTRY;
   const filteredCountries = useMemo(() => {
@@ -78,12 +79,12 @@ export default function SignupPage() {
   const inputClass =
     'h-12 w-full rounded-2xl border border-white/15 bg-white/5 px-4 py-3 text-sm sm:text-base text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-emerald-400/40 focus:border-emerald-400/40 transition backdrop-blur';
 
-  // Redirect after signup once auth has loaded
+  // Redirect after signup once auth has loaded — but not if we're showing the email confirmation dialog
   useEffect(() => {
-    if (!loading && session) {
+    if (!loading && session && !confirmationDialog) {
       router.replace('/');
     }
-  }, [loading, session, router]);
+  }, [loading, session, confirmationDialog, router]);
 
   useEffect(() => {
     if (!countryListOpen) return;
@@ -185,7 +186,7 @@ export default function SignupPage() {
                   });
                   return;
                 }
-                router.replace('/');
+                setConfirmationDialog(true);
               }}
               className="space-y-5 sm:space-y-6"
             >
@@ -396,6 +397,18 @@ export default function SignupPage() {
           Powered By Strativ
         </a>
       </footer>
+
+      <StatusDialog
+        open={confirmationDialog}
+        title="Account created!"
+        message="Please check your email and follow the confirmation link to activate your account."
+        variant="success"
+        primaryText="Go to sign in"
+        onClose={() => {
+          setConfirmationDialog(false);
+          router.replace('/login');
+        }}
+      />
 
       {/* Pricing Plans Section */}
       <section className="relative mx-auto w-full max-w-6xl mt-8 mb-12">

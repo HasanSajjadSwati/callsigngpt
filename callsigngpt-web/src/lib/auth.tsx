@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { supabase } from './supabase';
 import { getApiBase } from './apiBase';
 import { HttpClient } from './httpClient';
+import { getAuthRedirectUrl } from './authRedirect';
 
 type SessionLike = {
   access_token?: string;
@@ -19,6 +20,7 @@ type AuthCtx = {
   session: SessionLike | null;
   user: SessionLike['user'] | null;
   accessToken?: string;
+  tier: string;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (
@@ -36,6 +38,7 @@ const Ctx = createContext<AuthCtx>({
   session: null,
   user: null,
   accessToken: undefined,
+  tier: 'free',
   loading: true,
   signIn: async () => ({}),
   signUp: async () => ({}),
@@ -48,6 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<SessionLike | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastSyncedToken, setLastSyncedToken] = useState<string | null>(null);
+  const [tier, setTier] = useState<string>('free');
 
   // --- Helpers ---------------------------------------------------------------
 
@@ -62,7 +66,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       headers: { Authorization: `Bearer ${token}` },
     });
     try {
-      await client.post('/auth/sync', profile ?? {});
+      const res = await client.post<{ ok: boolean; user?: { tier?: string } }>('/auth/sync', profile ?? {});
+      if (res?.user?.tier) setTier(res.user.tier);
     } catch {
       // ignore - your API guard can lazily create on first protected call
     }
@@ -115,10 +120,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signUp: AuthCtx['signUp'] = async (email, password, name, phone) => {
+    const emailRedirectTo = getAuthRedirectUrl('/login');
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { name, phone } }, // store display name + phone in user_metadata
+      options: {
+        data: { name, phone },
+        emailRedirectTo,
+      }, // store display name + phone in user_metadata
     });
     if (error) return { error: error.message };
 
@@ -129,8 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithGoogle: AuthCtx['signInWithGoogle'] = async (returnPath = '/') => {
     const redirectPath = returnPath.startsWith('/') ? returnPath : `/${returnPath}`;
-    const redirectTo =
-      typeof window !== 'undefined' ? `${window.location.origin}${redirectPath}` : undefined;
+    const redirectTo = getAuthRedirectUrl(redirectPath);
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -155,6 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.warn('[auth] signOut failed:', error.message);
     }
     setSession(null);
+    setTier('free');
   };
 
   const updatePassword: AuthCtx['updatePassword'] = async (newPassword) => {
@@ -167,6 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session,
       user,
       accessToken,
+      tier,
       loading,
       signIn,
       signUp,
@@ -174,7 +184,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signOut,
       updatePassword,
     }),
-    [session, user, accessToken, loading]
+    [session, user, accessToken, tier, loading]
   );
 
   // Best-effort: keep app user row in sync (handles OAuth flows too)

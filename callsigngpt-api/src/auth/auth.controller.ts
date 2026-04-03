@@ -16,7 +16,9 @@ import { SupabaseAdminService } from './supabase-admin.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
-type Plan = 'free';
+export type Plan = 'free' | 'pro' | 'pro_plus' | 'enterprise';
+
+const VALID_PLANS: ReadonlySet<string> = new Set<Plan>(['free', 'pro', 'pro_plus', 'enterprise']);
 
 @Controller('auth')
 @UseGuards(SupabaseJwtGuard)
@@ -46,7 +48,7 @@ export class AuthController {
       email: user.email,
       name: (user as any).name ?? null,
       phone: (user as any).phone ?? null,
-      tier: 'free',
+      tier: (user as any).tier ?? 'free',
     };
   }
 
@@ -94,7 +96,7 @@ export class AuthController {
         email: user.email,
         name: (user as any).name ?? null,
         phone: (user as any).phone ?? null,
-        tier: 'free',
+        tier: (user as any).tier ?? 'free',
       },
     };
   }
@@ -129,7 +131,7 @@ export class AuthController {
         email: user.email,
         name: (user as any).name ?? null,
         phone: (user as any).phone ?? null,
-        tier: 'free',
+        tier: (user as any).tier ?? 'free',
       },
     };
   }
@@ -139,21 +141,26 @@ export class AuthController {
    */
   @Post('update-plan')
   async updatePlan(@Req() req: any, @Body() dto: { plan: Plan }) {
-    // Tiering disabled: always free, ignore requested plan.
     const { email } = req.user as { id: string; email: string };
-    await this.prisma.user.update({
+    const plan = dto.plan ?? 'free';
+
+    if (!VALID_PLANS.has(plan)) {
+      throw new BadRequestException(`Invalid plan: ${plan}`);
+    }
+
+    const user = await this.prisma.user.update({
       where: { email },
-      data: { tier: 'free' },
+      data: { tier: plan },
     });
 
     return {
       ok: true,
       user: {
-        id: (req.user as any).id,
-        email,
-        name: ((req.user as any).name as string) ?? null,
-        phone: ((req.user as any).phone as string) ?? null,
-        tier: 'free',
+        id: user.id,
+        email: user.email,
+        name: (user as any).name ?? null,
+        phone: (user as any).phone ?? null,
+        tier: (user as any).tier ?? 'free',
       },
     };
   }

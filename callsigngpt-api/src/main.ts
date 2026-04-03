@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import fastifyCors from '@fastify/cors';
 import fastifyRateLimit from '@fastify/rate-limit';
+import fastifyHelmet from '@fastify/helmet';
 import { envSchema } from './config/env.schema';
 import { AppConfigService } from './config/app-config.service';
 
@@ -28,6 +29,17 @@ async function bootstrap() {
       { method: req.method, url: req.url, origin: req.headers.origin },
       'incoming',
     );
+  });
+
+  // Security headers (helmet) — registered early so all responses get headers
+  await fastify.register(fastifyHelmet as any, {
+    contentSecurityPolicy: false, // CSP handled by frontend
+    crossOriginResourcePolicy: { policy: 'cross-origin' }, // allow cross-origin for SSE
+    crossOriginOpenerPolicy: { policy: 'same-origin' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    hsts: config.isProduction
+      ? { maxAge: 63072000, includeSubDomains: true, preload: true }
+      : false,
   });
 
   // CORS must be registered before routes are used

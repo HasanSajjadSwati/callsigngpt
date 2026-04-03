@@ -74,6 +74,9 @@ export class SupabaseAdminService {
   async deleteUserConversations(userId: string): Promise<void> {
     const { error } = await this.supabase.from('conversations').delete().eq('user_id', userId);
     if (error) throw new InternalServerErrorException(error.message);
+
+    const { error: folderError } = await this.supabase.from('conversation_folders').delete().eq('user_id', userId);
+    if (folderError) throw new InternalServerErrorException(folderError.message);
   }
 
   async revokeUserSessions(userId: string): Promise<void> {

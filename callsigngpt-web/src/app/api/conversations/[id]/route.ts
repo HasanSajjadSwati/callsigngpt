@@ -27,7 +27,8 @@ function deriveTitle(messages: AnyMessage[] | undefined, fallback = UI_TEXT.app.
   );
   const raw = (firstUser?.content ?? '').toString().trim();
   if (!raw) return fallback;
-  return raw.slice(0, MAX_TITLE_LENGTH);
+  // Short summary: first 4 words, max 40 chars
+  return raw.split(/\s+/).slice(0, 4).join(' ').slice(0, 40);
 }
 
 function pickTitle(provided?: string, messages?: AnyMessage[], fallback = UI_TEXT.app.newChatTitle) {
@@ -103,12 +104,9 @@ export async function PATCH(
 
   if (providedTitle !== undefined) {
     updates.title = pickTitle(providedTitle, messagesFromBody, existing.title ?? UI_TEXT.app.newChatTitle);
-  } else if (
-    messagesFromBody &&
-    (!existing.title || existing.title.toLowerCase() === PLACEHOLDER_TITLE)
-  ) {
-    updates.title = pickTitle(undefined, messagesFromBody, existing.title ?? UI_TEXT.app.newChatTitle);
   }
+  // Never auto-derive title from messages on PATCH — title comes from
+  // ensureConversation (placeholder) or generateTitle (LLM-generated).
   if (hasFolderKey) {
     if (typeof folderId === 'string' && folderId) {
       const ok = await ensureFolderAccess(sb, user.id, folderId);

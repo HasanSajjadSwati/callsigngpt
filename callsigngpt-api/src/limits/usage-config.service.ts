@@ -4,7 +4,7 @@ import { ModelConfig, ModelConfigService } from '../llm/model-config.service';
 import { AppConfigService } from '../config/app-config.service';
 import { SUPABASE_ADMIN_CLIENT } from '../common/supabase/supabase-admin.token';
 
-export type ModelRuleConfig = Pick<ModelConfig, 'modelKey' | 'isPremium' | 'perModelCap' | 'fallbackModel'>;
+export type ModelRuleConfig = Pick<ModelConfig, 'modelKey' | 'isPremium' | 'perModelCap' | 'fallbackModel' | 'minTier'>;
 
 export type AppSettingsConfig = {
   dailyQuotaResetHours: number;
@@ -76,6 +76,7 @@ export class UsageConfigService {
         isPremium: Boolean(model?.isPremium),
         perModelCap: Math.floor(perModelCap),
         fallbackModel: model?.fallbackModel ?? null,
+        minTier: model?.minTier ?? 'free',
       };
     }
 

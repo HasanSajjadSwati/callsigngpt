@@ -1,7 +1,15 @@
 import { HttpClient } from './httpClient';
 import { getApiBase } from './apiBase';
 
-type ModelMeta = { modelKey: string; displayName?: string | null; provider?: string; providerModel?: string };
+type ModelMeta = {
+  modelKey: string;
+  displayName?: string | null;
+  provider?: string;
+  providerModel?: string;
+  minTier?: string;
+  minTierLabel?: string;
+  accessible?: boolean;
+};
 
 const DEFAULT_TTL_MS = 60_000;
 

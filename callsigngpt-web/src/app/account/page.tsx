@@ -176,20 +176,27 @@ export default function AccountPage() {
   }
 
   async function clearConversationHistoryRequest() {
+    const headers: Record<string, string> = {};
+    if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
     const res = await fetch('/api/conversations/clear', {
       method: 'POST',
+      headers,
     });
     if (!res.ok) {
       throw new Error('Failed to clear history');
     }
+    const data = await res.json();
+    return data;
   }
 
   async function clearHistory() {
     setClearingHistory(true);
     setStatusMessage(null);
     try {
-      await clearConversationHistoryRequest();
-      setStatusMessage('Conversation history cleared.');
+      const result = await clearConversationHistoryRequest();
+      setStatusMessage(
+        `Cleared ${result.deletedConversations ?? 0} conversations and ${result.deletedFolders ?? 0} folders.`,
+      );
     } catch (err: any) {
       setStatusMessage(err?.message ?? 'Unable to clear conversations.');
     } finally {
@@ -353,11 +360,8 @@ export default function AccountPage() {
             <PricingPlans
               currentPlan={plan}
               onSelectPlan={(selectedPlan: PricingPlan) => {
-                showStatusDialog(
-                  'Upgrade Coming Soon',
-                  `${selectedPlan.name} plan upgrades will be available soon. Stay tuned!`,
-                  'info'
-                );
+                if (selectedPlan.price === null) return; // free plan — no checkout
+                router.push(`/checkout?plan=${selectedPlan.id}`);
               }}
             />
           </section>

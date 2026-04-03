@@ -12,6 +12,7 @@ import { AccountModule } from './account/account.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { AppConfigModule } from './config/app-config.module';
 import { SupabaseAdminModule } from './common/supabase/supabase-admin.module';
+import { PaymentModule } from './payment/payment.module';
 import { envSchema } from './config/env.schema';
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { envSchema } from './config/env.schema';
     HealthModule,
     AccountModule,
     ConversationsModule,
+    PaymentModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: SupabaseJwtGuard }, // global auth

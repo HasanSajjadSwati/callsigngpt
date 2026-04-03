@@ -177,6 +177,14 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />
+                <div className="flex justify-end">
+                  <a
+                    href="/forgot-password"
+                    className="text-xs text-zinc-400 hover:text-zinc-200 underline-offset-4 hover:underline transition"
+                  >
+                    Forgot password?
+                  </a>
+                </div>
               </div>
 
               <button className="w-full rounded-2xl bg-gradient-to-r from-emerald-400 via-sky-400 to-cyan-400 px-4 py-3.5 text-sm font-semibold text-black shadow-lg shadow-emerald-500/30 transition hover:shadow-emerald-400/50 sm:text-base">

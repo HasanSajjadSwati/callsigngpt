@@ -15,12 +15,17 @@ type ApiModel = {
   displayName?: string | null;
   provider?: string;
   providerModel?: string;
+  minTier?: string;
+  minTierLabel?: string;
+  accessible?: boolean;
 };
 
 type Option = {
   key: string;
   label: string;
   description?: string;
+  minTierLabel?: string;
+  accessible: boolean;
 };
 
 export default function ModelPicker({ value, onChange, variant = 'default' }: ModelPickerProps) {
@@ -45,11 +50,14 @@ export default function ModelPicker({ value, onChange, variant = 'default' }: Mo
             key: m.modelKey,
             label: m.displayName || m.modelKey,
             description: parts.length ? parts.join(' - ') : undefined,
+            minTierLabel: m.minTierLabel,
+            accessible: m.accessible !== false,
           };
         });
         setOptions(nextOptions);
-        if (nextOptions.length > 0 && !nextOptions.some((o) => o.key === value)) {
-          onChange(nextOptions[0].key);
+        if (nextOptions.length > 0 && !nextOptions.some((o) => o.key === value && o.accessible)) {
+          const firstAccessible = nextOptions.find((o) => o.accessible);
+          if (firstAccessible) onChange(firstAccessible.key);
         }
       } catch (err) {
         console.error('Failed to load models', err);
@@ -149,43 +157,68 @@ export default function ModelPicker({ value, onChange, variant = 'default' }: Mo
             <ul className="max-h-80 overflow-auto px-2 pb-2">
               {options.map((opt) => {
                 const isSelected = opt.key === value;
+                const locked = !opt.accessible;
                 return (
                   <li key={opt.key}>
                     <button
                       type="button"
                       role="option"
                       aria-selected={isSelected}
+                      aria-disabled={locked}
                       onClick={() => {
+                        if (locked) return;
                         onChange(opt.key);
                         setOpen(false);
                       }}
                       className={[
                         'group flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--ui-accent)]',
-                        isSelected
-                          ? 'bg-[color:var(--ui-surface-alt)] text-[color:var(--ui-text)]'
-                          : 'text-[color:var(--ui-text)] hover:bg-white/5',
+                        locked
+                          ? 'cursor-not-allowed opacity-50'
+                          : isSelected
+                            ? 'bg-[color:var(--ui-surface-alt)] text-[color:var(--ui-text)]'
+                            : 'text-[color:var(--ui-text)] hover:bg-white/5',
                       ].join(' ')}
                     >
                       <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate text-sm font-medium">{opt.label}</span>
+                        <span className="flex items-center gap-2 truncate text-sm font-medium">
+                          {opt.label}
+                          {locked && opt.minTierLabel && (
+                            <span className="inline-flex shrink-0 items-center rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-400">
+                              {opt.minTierLabel}
+                            </span>
+                          )}
+                        </span>
                         {opt.description && (
                           <span className="truncate text-xs text-[color:var(--ui-text-muted)]">
                             {opt.description}
                           </span>
                         )}
                       </span>
-                      <svg
-                        viewBox="0 0 24 24"
-                        className={[
-                          'h-4 w-4 flex-shrink-0 text-[color:var(--ui-text)] transition-opacity',
-                          isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-40',
-                        ].join(' ')}
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.2"
-                      >
-                        <path d="M5 13l4 4L19 7" />
-                      </svg>
+                      {locked ? (
+                        <svg
+                          viewBox="0 0 24 24"
+                          className="h-4 w-4 flex-shrink-0 text-amber-400"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                        </svg>
+                      ) : (
+                        <svg
+                          viewBox="0 0 24 24"
+                          className={[
+                            'h-4 w-4 flex-shrink-0 text-[color:var(--ui-text)] transition-opacity',
+                            isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-40',
+                          ].join(' ')}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.2"
+                        >
+                          <path d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
                     </button>
                   </li>
                 );

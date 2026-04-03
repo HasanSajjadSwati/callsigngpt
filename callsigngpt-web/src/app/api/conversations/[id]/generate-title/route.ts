@@ -75,8 +75,8 @@ export async function POST(
     {
       role: 'system' as const,
       content:
-        'You are a conversation title generator. Given the beginning of a conversation, generate a short, descriptive title (3-8 words max). ' +
-        'The title should capture the main topic or intent. Do NOT use quotes, punctuation at the end, or the word "Title:". ' +
+        'You are a conversation title generator. Given the beginning of a conversation, generate a very short, descriptive title (1-4 words max). ' +
+        'The title should capture the main topic or intent in the fewest words possible. Do NOT use quotes, punctuation at the end, or the word "Title:". ' +
         'Just output the title text and nothing else.',
     },
     {
@@ -104,13 +104,14 @@ export async function POST(
         temperature: 0.3,
         max_tokens: 30,
         stream: false,
+        search: { mode: 'off' },
       }),
       signal: AbortSignal.timeout(15_000),
     });
 
     if (!chatRes.ok) {
-      // Fallback: just use first user message truncated
-      const fallbackTitle = firstUser.content.trim().slice(0, MAX_TITLE_LENGTH);
+      // Fallback: first 4 words of user message
+      const fallbackTitle = firstUser.content.trim().split(/\s+/).slice(0, 4).join(' ');
       return NextResponse.json({ title: fallbackTitle }, { status: 200 });
     }
 
@@ -138,6 +139,9 @@ export async function POST(
       }
     }
 
+    // Strip any leaked search-status protocol markers before processing
+    generatedTitle = generatedTitle.replace(/\[{3}SEARCH_STATUS\]{3}[^\n]*/g, '').trim();
+
     // Clean up the generated title
     let title = generatedTitle
       .trim()
@@ -146,7 +150,7 @@ export async function POST(
       .trim();
 
     if (!title || title.length < 2) {
-      title = truncateContent(firstUser.content, MAX_TITLE_LENGTH);
+      title = firstUser.content.trim().split(/\s+/).slice(0, 4).join(' ');
     } else {
       title = title.slice(0, MAX_TITLE_LENGTH);
     }
@@ -160,8 +164,8 @@ export async function POST(
 
     return NextResponse.json({ title }, { status: 200 });
   } catch (err) {
-    // On any failure, fall back to truncated first message
-    const fallbackTitle = firstUser.content.trim().slice(0, MAX_TITLE_LENGTH);
+    // On any failure, fall back to first 4 words
+    const fallbackTitle = firstUser.content.trim().split(/\s+/).slice(0, 4).join(' ');
     return NextResponse.json({ title: fallbackTitle }, { status: 200 });
   }
 }

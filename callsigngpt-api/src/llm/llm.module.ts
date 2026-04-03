@@ -1,13 +1,14 @@
 import { Module } from '@nestjs/common';
 import { LlmService } from './llm.service';
 import { ModelConfigService } from './model-config.service';
+import { DocumentParserService } from './document-parser.service';
 import { ModelsController } from './models.controller';
 import { SecretsModule } from '../secrets/secrets.module';
 import { SearchModule } from '../search/search.module';
 
 @Module({
   imports: [SecretsModule, SearchModule],
-  providers: [LlmService, ModelConfigService],
+  providers: [LlmService, ModelConfigService, DocumentParserService],
   controllers: [ModelsController],
   exports: [LlmService, ModelConfigService],
 })

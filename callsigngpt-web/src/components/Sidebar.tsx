@@ -654,7 +654,7 @@ export default function Sidebar({
     return () => {
       cancelled = true;
     };
-  }, [session, authHeaders]);
+  }, [session, authHeaders, reloadKey]);
 
   // Track the previous reloadKey so we can distinguish initial mount from reload bumps
   const prevReloadKeyRef = useRef(reloadKey);

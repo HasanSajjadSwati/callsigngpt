@@ -25,7 +25,7 @@ type UseStreamingChatArgs = {
 type SendPayload = {
   text?: string;
   attachment?: Attachment;
-  forceSearch?: boolean;
+  searchMode?: 'auto' | 'always' | 'off';
 };
 
 const formatBytes = (size: number) => {
@@ -263,6 +263,8 @@ export function useStreamingChat({
           credentials: 'include',
         });
         if (res.ok) {
+          // Small delay so DB commit is visible before sidebar refetches
+          await new Promise((r) => setTimeout(r, 300));
           onSidebarDirty?.();
         }
       } catch {
@@ -392,7 +394,7 @@ export function useStreamingChat({
   );
 
   const send = useCallback(
-    async ({ text, attachment, forceSearch }: SendPayload) => {
+    async ({ text, attachment, searchMode }: SendPayload) => {
       const userText = (text ?? '').trim();
       if (!userText && !attachment) return;
       if (loading) return;
@@ -445,7 +447,10 @@ Response guidelines:
 - If a question is ambiguous, address the most likely interpretation thoroughly, then briefly mention alternative interpretations.
 - Be direct and substantive. Avoid filler phrases like "Great question!" or "Sure, I'd be happy to help!". Get straight to the answer.
 - Only be brief when the user explicitly asks for brevity or the answer is genuinely simple (yes/no, a single fact, etc.).
-- Do not mention your model name, version, or architecture unless explicitly asked.`;
+- Do not mention your model name, version, or architecture unless explicitly asked.
+- When citing sources from web search, always use inline markdown links: [Source Title](url). Group related citations together at the end of each paragraph.
+- For multi-part questions, use numbered sections or headings to address each part clearly.
+- When information may be outdated or uncertain, say so explicitly rather than presenting it as fact.`;
           const identity = SYSTEM_PROMPT_TEMPLATE
             ? SYSTEM_PROMPT_TEMPLATE.split('{model}').join(identityName)
             : defaultIdentity;
@@ -479,7 +484,7 @@ Response guidelines:
           messages: boundedHistory,
           temperature: DEFAULT_TEMPERATURE,
           ...(responseMaxTokens ? { max_tokens: responseMaxTokens } : {}),
-          ...(forceSearch ? { search: { mode: 'always' } } : {}),
+          ...(searchMode && searchMode !== 'auto' ? { search: { mode: searchMode } } : {}),
         };
 
         let finalAssistantText = '';

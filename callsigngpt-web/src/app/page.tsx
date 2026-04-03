@@ -103,7 +103,7 @@ function HomeInner() {
     [accessToken],
   );
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [forceWebSearch, setForceWebSearch] = useState(false);
+  const [searchMode, setSearchMode] = useState<'auto' | 'always' | 'off'>('auto');
 
   // Delete confirmation state
   const deleteConfirmRef = useRef<{
@@ -428,8 +428,16 @@ function HomeInner() {
                   });
                 });
               }}
-              onClearAll={() => {
+              onClearAll={async () => {
+                try {
+                  const headers: Record<string, string> = {};
+                  if (accessToken) headers['Authorization'] = `Bearer ${accessToken}`;
+                  await fetch('/api/conversations/clear', { method: 'POST', headers });
+                } catch (e) {
+                  console.warn('[page] failed to clear conversations:', e);
+                }
                 resetToNewChat();
+                setSidebarReloadKey((k) => k + 1);
               }}
             />
           </div>
@@ -458,10 +466,10 @@ function HomeInner() {
                           disabled={loading}
                           showStop={loading}
                           onStop={stop}
-                          forceWebSearch={forceWebSearch}
-                          onForceWebSearchChange={setForceWebSearch}
+                          searchMode={searchMode}
+                          onSearchModeChange={setSearchMode}
                           onSend={async ({ text, attachment }) => {
-                            await send({ text, attachment, forceSearch: forceWebSearch });
+                            await send({ text, attachment, searchMode });
                           }}
                         />
                       </div>
@@ -512,7 +520,7 @@ function HomeInner() {
                         <div className="flex justify-end">
                           <button
                             type="button"
-                            onClick={() => send({ text: 'Continue', forceSearch: forceWebSearch })}
+                            onClick={() => send({ text: 'Continue', searchMode })}
                             className="inline-flex items-center gap-2 rounded-full border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3 py-1.5 text-xs font-medium text-[color:var(--ui-text)] transition hover:bg-white/5"
                           >
                             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -526,10 +534,10 @@ function HomeInner() {
                         disabled={loading}
                         showStop={loading}
                         onStop={stop}
-                        forceWebSearch={forceWebSearch}
-                        onForceWebSearchChange={setForceWebSearch}
+                        searchMode={searchMode}
+                        onSearchModeChange={setSearchMode}
                         onSend={async ({ text, attachment }) => {
-                          await send({ text, attachment, forceSearch: forceWebSearch });
+                          await send({ text, attachment, searchMode });
                         }}
                       />
                     </div>

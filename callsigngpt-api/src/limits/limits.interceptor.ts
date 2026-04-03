@@ -6,12 +6,14 @@ import {
   HttpException,
   HttpStatus,
   InternalServerErrorException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
 import { Reflector } from '@nestjs/core';
 import { IS_PUBLIC_KEY } from '../common/decorators/public.decorator';
 import { UsageConfigService, ModelRuleConfig } from './usage-config.service';
 import { UsageLoggerService } from './usage-logger.service';
+import { TierConfigService } from './tier-config.service';
 
 const pickModel = (req: any) =>
   req.body?.model || req.query?.model || req.headers['x-llm-model'] || 'unknown';
@@ -22,6 +24,7 @@ export class LimitsInterceptor implements NestInterceptor {
     private readonly reflector: Reflector,
     private readonly usageConfig: UsageConfigService,
     private readonly usageLogger: UsageLoggerService,
+    private readonly tierConfig: TierConfigService,
   ) {}
 
   private async precheck(userId: string, model: string, req: any) {
@@ -33,21 +36,54 @@ export class LimitsInterceptor implements NestInterceptor {
     if (!rule.perModelCap || rule.perModelCap <= 0) {
       throw new InternalServerErrorException(`per_model_cap missing/invalid for model "${rule.modelKey}"`);
     }
+
+    // --- Tier-based access control ---
+    const userTier = ((req?.user?.tier as string) || 'free').toLowerCase();
+    const modelMinTier = (rule.minTier || 'free').toLowerCase();
+
+    if (!TierConfigService.canAccess(userTier, modelMinTier)) {
+      throw new ForbiddenException(
+        `Model "${rule.modelKey}" requires ${TierConfigService.tierLabel(modelMinTier)} plan or higher. ` +
+        `Please upgrade your plan to access this model.`,
+      );
+    }
+
     const wantsGpt5 = this.usageConfig.isGpt5Model(model);
     const hours = Math.max(1, Math.floor(Number(cfg.app.dailyQuotaResetHours)));
     const ruleKey = rule.modelKey || model;
     let effectiveModel = model;
 
-    const cap = Math.max(1, Math.floor(Number(rule.perModelCap)));
+    // --- Aggregate daily limit per tier (across all models) ---
+    const tierLimits = await this.tierConfig.getLimitsForTier(userTier);
+    const aggregateUsage = await this.usageLogger.incrementAndFetch({
+      userId,
+      model: '_aggregate_total',
+      planTag: userTier,
+      dailyCap: tierLimits.dailyTotalCap,
+    });
+
+    if (aggregateUsage.totalCalls > tierLimits.dailyTotalCap) {
+      throw new HttpException(
+        `Daily request limit reached (${tierLimits.dailyTotalCap} requests). ` +
+        `Upgrade your plan for higher limits, or try again in ${hours} hour${hours === 1 ? '' : 's'}.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    // --- Apply tier-based per-model cap multiplier ---
+    const effectiveCap = await this.tierConfig.getEffectiveModelCap(
+      Math.max(1, Math.floor(Number(rule.perModelCap))),
+      userTier,
+    );
 
     const usage = await this.usageLogger.incrementAndFetch({
       userId,
       model: ruleKey,
-      planTag: (req?.user?.tier as string) || 'model-rule',
-      dailyCap: cap,
+      planTag: userTier,
+      dailyCap: effectiveCap,
     });
 
-    if (usage.totalCalls > cap) {
+    if (usage.totalCalls > effectiveCap) {
       const fallbackModel =
         rule?.fallbackModel ?? cfg.app.fallbackModel ?? null;
       if (fallbackModel) {
@@ -59,7 +95,7 @@ export class LimitsInterceptor implements NestInterceptor {
         }
       } else {
         throw new HttpException(
-          `Daily quota exceeded. Try again in ${hours} hour${hours === 1 ? '' : 's'} (model=${ruleKey}, cap=${cap})`,
+          `Daily quota exceeded. Try again in ${hours} hour${hours === 1 ? '' : 's'} (model=${ruleKey}, cap=${effectiveCap})`,
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }

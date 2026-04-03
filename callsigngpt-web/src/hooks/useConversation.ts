@@ -80,12 +80,21 @@ export function useConversation(
     greetingFnRef.current = () => buildSystemMessage(modelRef.current, modelLabelsRef.current);
   }, [modelLabels]);
 
-  const [msgs, setMsgs] = useState<UIMsg[]>(() => withTimestamps([greetingFnRef.current()]));
+  const [msgs, _setMsgs] = useState<UIMsg[]>(() => withTimestamps([greetingFnRef.current()]));
   const msgsRef = useRef<UIMsg[]>(msgs); // Keep ref to latest messages
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [loadingConversation, setLoadingConversation] = useState(false);
 
-  // Keep ref in sync with msgs state
+  // Wrapper that keeps msgsRef in sync synchronously
+  const setMsgs: typeof _setMsgs = useCallback((action) => {
+    _setMsgs((prev) => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      msgsRef.current = next;
+      return next;
+    });
+  }, []);
+
+  // Also keep ref in sync after React commits (belt-and-suspenders)
   useEffect(() => {
     msgsRef.current = msgs;
   }, [msgs]);
@@ -347,8 +356,9 @@ export function useConversation(
       // Use ref to get the latest messages (includes optimistic updates)
       const currentMsgs = msgsRef.current;
       const firstUser = currentMsgs.find((m) => m.role === 'user');
+      // Short placeholder title — the LLM-based generate-title will overwrite it
       const title =
-        firstUser?.content?.slice(0, APP_CONFIG.conversation.maxTitleLength) ||
+        firstUser?.content?.split(/\s+/).slice(0, 4).join(' ').slice(0, 40) ||
         UI_TEXT.app.newChatTitle;
 
       const pendingFolderId = pendingFolderIdRef.current;
@@ -411,6 +421,8 @@ export function useConversation(
     } catch {
       isCreatingConversation.current = false;
       pendingConversationId.current = null;
+    } finally {
+      isCreatingConversation.current = false;
     }
   }, [msgs, model, conversationId, router, search, authedClient, apiCredentials, authHeaders]);
 
@@ -452,8 +464,13 @@ export function useConversation(
   /** Append messages plus persist */
   const appendMessages = useCallback(
     async (...newMessages: UIMsg[]) => {
-      let finalConversationId: string | null = null;
-      
+      // Cancel any pending debounced save — we will save immediately below
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      // Update state (pure — no side effects inside the updater)
       setMsgs((prev) => {
         const existingIds = new Set(prev.map((m) => m.id));
         const toAdd = newMessages.filter((m) => !existingIds.has(m.id));
@@ -463,49 +480,20 @@ export function useConversation(
           const updated = newMessages.find((nm) => nm.id === msg.id);
           return updated || msg;
         });
-        const timestampedNext = withTimestamps(finalNext);
-        
-        const cid = conversationId || pendingConversationId.current;
-        finalConversationId = cid;
-        
-        if (cid) {
-          const firstUserMsg = timestampedNext.find((m) => m.role === 'user');
-          const newTitle = firstUserMsg
-            ? firstUserMsg.content.slice(0, APP_CONFIG.conversation.maxTitleLength).trim()
-            : undefined;
-          
-          const updateBody: { messages: UIMsg[]; title?: string } = { messages: timestampedNext };
-          if (newTitle && (pendingConversationId.current === cid || isCreatingConversation.current)) {
-            updateBody.title = newTitle;
-          }
-          
-          // debounce saves to reduce flicker
-          if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-          saveTimerRef.current = setTimeout(() => {
-            void sendConversationPatch(cid, updateBody, '[appendMessages]');
-          }, 300);
-        }
-        return timestampedNext;
+        return withTimestamps(finalNext);
       });
-      
-      if (!finalConversationId && pendingConversationId.current) {
-        setTimeout(async () => {
-          const cid = conversationId || pendingConversationId.current;
-          if (cid) {
-            const currentMsgs = withTimestamps(msgsRef.current);
-            const firstUserMsg = currentMsgs.find((m) => m.role === 'user');
-            const newTitle = firstUserMsg
-              ? firstUserMsg.content.slice(0, APP_CONFIG.conversation.maxTitleLength).trim()
-              : undefined;
-            
-            const updateBody: { messages: UIMsg[]; title?: string } = { messages: currentMsgs };
-            if (newTitle && (pendingConversationId.current === cid || isCreatingConversation.current)) {
-              updateBody.title = newTitle;
-            }
 
-            await sendConversationPatch(cid, updateBody, '[appendMessages]');
+      // Save immediately — msgsRef is synced synchronously inside setMsgs
+      const cid = conversationId || pendingConversationId.current;
+      if (cid) {
+        // Strip any leaked search-status protocol markers before persisting
+        const messagesToSave = withTimestamps(msgsRef.current).map((m) => {
+          if (typeof m.content === 'string' && m.content.includes('[[[SEARCH_STATUS]]]')) {
+            return { ...m, content: m.content.replace(/\[{3}SEARCH_STATUS\]{3}[^\n]*/g, '').trim() };
           }
-        }, 200);
+          return m;
+        });
+        await sendConversationPatch(cid, { messages: messagesToSave }, '[appendMessages]');
       }
       
       isCreatingConversation.current = false;
@@ -514,15 +502,30 @@ export function useConversation(
     [conversationId, sendConversationPatch],
   );
 
-  /** Save current chat (explicit) */
+  /** Save current chat (explicit) — flushes any pending debounced save first */
   const saveCurrentChatIfNeeded = useCallback(async () => {
-      if (!conversationId) return;
+      // Flush any pending debounced save
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+
+      // If a conversation is being created, wait for it (up to 5s)
+      if (isCreatingConversation.current && !conversationId && !pendingConversationId.current) {
+        for (let i = 0; i < 50; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+          if (pendingConversationId.current || !isCreatingConversation.current) break;
+        }
+      }
+
+      const cid = conversationId || pendingConversationId.current;
+      if (!cid) return;
       try {
-        await sendConversationPatch(conversationId, { messages: msgs }, '[useConversation]');
+        await sendConversationPatch(cid, { messages: msgsRef.current }, '[useConversation]');
       } catch (_err) {
         console.warn('[useConversation] saveCurrentChatIfNeeded failed:', _err);
       }
-  }, [conversationId, msgs, sendConversationPatch]);
+  }, [conversationId, sendConversationPatch]);
 
   /** Reset local chat */
   const resetToNewChat = useCallback(

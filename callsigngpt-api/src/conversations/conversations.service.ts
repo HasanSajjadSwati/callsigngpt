@@ -42,7 +42,8 @@ function deriveTitle(messages: Msg[] = [], providedTitle?: string, fallback = DE
   }
   const firstUser = messages.find((m) => m.role === 'user' && Boolean(m.content?.trim()));
   if (firstUser?.content) {
-    return firstUser.content.trim().slice(0, MAX_TITLE_LENGTH);
+    // Short summary: first 4 words, max 40 chars (LLM-generated title overwrites later)
+    return firstUser.content.trim().split(/\s+/).slice(0, 4).join(' ').slice(0, 40);
   }
   if (cleanProvided) return cleanProvided.slice(0, MAX_TITLE_LENGTH);
   return fallback.slice(0, MAX_TITLE_LENGTH);
@@ -118,9 +119,9 @@ export class ConversationsService {
     let nextTitle = existing.title;
     if (patch.title !== undefined) {
       nextTitle = deriveTitle(nextMessages, patch.title, existing.title || DEFAULT_TITLE);
-    } else if (!existing.title || existing.title.toLowerCase() === DEFAULT_TITLE.toLowerCase()) {
-      nextTitle = deriveTitle(nextMessages, undefined, existing.title || DEFAULT_TITLE);
     }
+    // Never auto-derive title from messages on update — title comes from
+    // ensureConversation (placeholder) or generateTitle (LLM-generated).
 
     const updates: Record<string, any> = { updated_at: new Date().toISOString(), title: nextTitle };
     if (patch.messages !== undefined) updates.messages = patch.messages;

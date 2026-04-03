@@ -34,7 +34,8 @@ function deriveTitle(
   );
   const raw = (firstUser?.content ?? '').toString().trim();
   if (!raw) return fallback;
-  return raw.slice(0, MAX_TITLE_LENGTH);
+  // Short summary: first 4 words, max 40 chars
+  return raw.split(/\s+/).slice(0, 4).join(' ').slice(0, 40);
 }
 
 function pickTitle(provided: string | undefined, messages?: AnyMessage[]) {

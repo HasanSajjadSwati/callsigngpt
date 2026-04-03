@@ -8,10 +8,12 @@ import { Attachment } from "@/lib/chat";
 
 const MAX_ATTACHMENT_BYTES = Number(process.env.NEXT_PUBLIC_MAX_ATTACHMENT_MB || 5) * 1024 * 1024; // client-side guard
 
+type SearchMode = 'auto' | 'always' | 'off';
+
 type SendPayload = {
   text?: string;
   attachment?: Attachment;
-  forceSearch?: boolean;
+  searchMode?: SearchMode;
 };
 
 type Props = {
@@ -19,8 +21,8 @@ type Props = {
   onSend: (payload: SendPayload) => Promise<void> | void;
   onStop?: () => void;
   showStop?: boolean;
-  forceWebSearch?: boolean;
-  onForceWebSearchChange?: (next: boolean) => void;
+  searchMode?: SearchMode;
+  onSearchModeChange?: (next: SearchMode) => void;
 };
 
 const formatSize = (size: number) => {
@@ -28,6 +30,8 @@ const formatSize = (size: number) => {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
+
+const PARSEABLE_DOC_RE = /pdf|msword|officedocument\.wordprocessingml/i;
 
 const readFileAsDataUrl = (file: File | Blob) =>
   new Promise<string>((resolve, reject) => {
@@ -42,8 +46,8 @@ export default function Composer({
   onSend,
   onStop,
   showStop,
-  forceWebSearch,
-  onForceWebSearchChange,
+  searchMode = 'auto',
+  onSearchModeChange,
 }: Props) {
   const [input, setInput] = useState("");
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -51,11 +55,19 @@ export default function Composer({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   useAutosizeTextarea(inputRef, input);
-  const showSearchToggle = typeof onForceWebSearchChange === "function";
-  const searchActive = Boolean(forceWebSearch);
-  const searchToggleClasses = searchActive
-    ? "border-[color:var(--ui-accent)] bg-[color:var(--ui-accent-soft)] text-[color:var(--ui-text)]"
-    : "border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] text-[color:var(--ui-text-muted)]";
+  const showSearchToggle = typeof onSearchModeChange === "function";
+
+  const cycleSearchMode = () => {
+    const next: SearchMode = searchMode === 'auto' ? 'always' : searchMode === 'always' ? 'off' : 'auto';
+    onSearchModeChange?.(next);
+  };
+
+  const searchToggleClasses =
+    searchMode === 'always'
+      ? "border-[color:var(--ui-accent)] bg-[color:var(--ui-accent-soft)] text-[color:var(--ui-text)]"
+      : searchMode === 'off'
+        ? "border-red-500/40 bg-red-500/10 text-[color:var(--ui-text-muted)]"
+        : "border-[color:var(--ui-border)] bg-[color:var(--ui-surface-alt)] text-[color:var(--ui-text-muted)]";
 
   const clearAttachment = () => {
     setAttachment(null);
@@ -121,7 +133,7 @@ export default function Composer({
     const payload: SendPayload = {
       text: trimmed || undefined,
       attachment: attachment ?? undefined,
-      forceSearch: forceWebSearch ? true : undefined,
+      searchMode,
     };
 
     // Clear immediately so the just-sent text doesn't linger while the reply streams
@@ -168,6 +180,9 @@ export default function Composer({
                   <p className="text-xs text-zinc-400">
                     {attachment.mime} - {formatSize(attachment.size)}
                   </p>
+                  {attachment.type === 'file' && PARSEABLE_DOC_RE.test(attachment.mime) && (
+                    <p className="text-[10px] font-medium text-emerald-400">Content will be extracted</p>
+                  )}
                 </div>
               </div>
               <button
@@ -187,26 +202,36 @@ export default function Composer({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <button
                 type="button"
-                onClick={() => onForceWebSearchChange?.(!searchActive)}
+                onClick={cycleSearchMode}
                 disabled={disabled}
-                role="switch"
-                aria-checked={searchActive}
-                aria-pressed={searchActive}
-                title="Always use web search for this chat"
+                title={
+                  searchMode === 'auto'
+                    ? 'Auto: searches when the query needs it'
+                    : searchMode === 'always'
+                      ? 'Always: every message triggers web search'
+                      : 'Off: web search disabled'
+                }
                 className={[
                   "inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium transition",
                   searchToggleClasses,
                   disabled ? "opacity-60 cursor-not-allowed" : "hover:bg-white/5",
                 ].join(" ")}
               >
-                <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6">
-                  <path d="M12 3a9 9 0 1 0 0 18" />
-                  <path d="M3 12h18" />
-                  <path d="M12 3a15 15 0 0 1 0 18" />
-                </svg>
+                {searchMode === 'off' ? (
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6">
+                    <path d="M2 2l20 20" />
+                    <path d="M12 3a9 9 0 0 1 8.5 12M3.5 9A9 9 0 0 0 12 21" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6">
+                    <path d="M12 3a9 9 0 1 0 0 18" />
+                    <path d="M3 12h18" />
+                    <path d="M12 3a15 15 0 0 1 0 18" />
+                  </svg>
+                )}
                 <span>Search the web</span>
                 <span className="text-[10px] uppercase tracking-[0.2em] text-[color:var(--ui-text-subtle)]">
-                  {searchActive ? "Always" : "Auto"}
+                  {searchMode === 'always' ? 'Always' : searchMode === 'off' ? 'Off' : 'Auto'}
                 </span>
               </button>
             </div>
@@ -244,8 +269,8 @@ export default function Composer({
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled}
                 className="flex h-10 w-10 items-center justify-center rounded-xl border border-[color:var(--ui-border)] bg-transparent text-[color:var(--ui-text)] transition hover:bg-white/5"
-                aria-label="Attach file (images/files supported on select models)"
-                title="Attach file (images/files supported on select models)"
+                aria-label="Attach file — PDF, DOCX, images, text"
+                title="Attach file — PDF, DOCX, images, text files supported"
               >
               <span aria-hidden="true" className="flex h-6 w-6 items-center justify-center">
                 <img
@@ -255,7 +280,7 @@ export default function Composer({
                   className="h-5 w-5"
                 />
               </span>
-                <span className="sr-only">Attach file (images/files supported on select models)</span>
+                <span className="sr-only">Attach file — PDF, DOCX, images, text</span>
               </button>
 
               {showStop && (
@@ -291,7 +316,7 @@ export default function Composer({
           <input
             ref={fileInputRef}
             type="file"
-            accept="*/*"
+            accept="image/*,.pdf,.doc,.docx,.txt,.csv,.json,.xml,.md,.yaml,.yml"
             className="hidden"
             onChange={handleFileChange}
           />

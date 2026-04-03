@@ -22,6 +22,7 @@ export type ModelConfig = {
   temperatureDefault?: number | null;
   maxTokensDefault?: number | null;
   displayName?: string | null;
+  minTier: string;
 };
 
 type Cache = {
@@ -86,7 +87,7 @@ export class ModelConfigService {
       defs = await this.supabase
         .from('model_definitions')
         .select(
-          'model_key,provider,provider_model,is_premium,per_model_cap,fallback_model,temperature_default,max_tokens_default,display_name,enabled',
+          'model_key,provider,provider_model,is_premium,per_model_cap,fallback_model,temperature_default,max_tokens_default,display_name,enabled,min_tier',
         )
         .eq('enabled', true);
     } catch (err) {
@@ -116,6 +117,7 @@ export class ModelConfigService {
         temperatureDefault: row?.temperature_default ?? null,
         maxTokensDefault: row?.max_tokens_default ?? null,
         displayName: row?.display_name ?? null,
+        minTier: row?.min_tier ?? 'free',
       };
     }
 

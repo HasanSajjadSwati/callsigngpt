@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
 import { ModelConfigService, type ModelConfig } from './model-config.service';
+import { DocumentParserService } from './document-parser.service';
 import { SecretsService } from '../secrets/secrets.service';
 import { AppConfigService } from '../config/app-config.service';
 import { fetchWithTimeout } from '../common/http/fetch-with-timeout';
@@ -7,38 +8,13 @@ import { GoogleSearchService, type SearchResult } from '../search/google-search.
 
 const DEFAULT_FALLBACK_MODEL = 'basic:gpt-4o-mini';
 const SEARCH_STATUS_PREFIX = '[[[SEARCH_STATUS]]]';
+const DATA_URL_RE = /data:([a-z0-9+/.-]+);base64,([A-Za-z0-9+/=]+)/gi;
 
 type ChatContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string } };
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string | ChatContentPart[] };
-
-function extractInlineData(content: string): string {
-  // Replace data URLs with decoded text when possible, otherwise a placeholder
-  return content.replace(/data:([a-z0-9+/.-]+);base64,([A-Za-z0-9+/=]+)/gi, (_m, mime, b64) => {
-    const isTextLike = /^text\/|json$|xml$|csv$|markdown$/i.test(mime || '');
-    const isDocLike = /(pdf|msword|officedocument|spreadsheet|presentation|excel|powerpoint)/i.test(
-      mime || '',
-    );
-    try {
-      const buf = Buffer.from(String(b64), 'base64');
-      const MAX_TEXT = 200_000;
-      if (isTextLike) {
-        const text = buf.toString('utf-8');
-        return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}... [truncated text from ${mime}]` : text;
-      }
-      if (isDocLike) {
-        const MAX_BIN = 120_000; // keep payload manageable for LLM
-        const preview = b64.length > MAX_BIN ? `${b64.slice(0, MAX_BIN)}... [truncated base64 from ${mime}]` : b64;
-        return `[document ${mime} base64 preview]\n${preview}`;
-      }
-      return `[embedded file: ${mime}]`;
-    } catch {
-      return `[embedded file: ${mime}]`;
-    }
-  });
-}
 
 type ChatBody = {
   model: string; // e.g. "basic:gpt-4o-mini"
@@ -55,6 +31,7 @@ export class LlmService {
 
   constructor(
     private readonly modelConfig: ModelConfigService,
+    private readonly docParser: DocumentParserService,
     private readonly secrets: SecretsService,
     private readonly config: AppConfigService,
     private readonly search: GoogleSearchService,
@@ -80,16 +57,8 @@ export class LlmService {
       return typeof m?.content === 'string' && m.content.trim().length > 0;
     });
 
-    // Normalize file/text content to keep payload sizes manageable and readable
-    const normalized = cleaned.map((m) => {
-      if (Array.isArray(m.content)) {
-        const parts = m.content.map((p) =>
-          p.type === 'text' ? { ...p, text: extractInlineData(p.text) } : p,
-        );
-        return { ...m, content: parts };
-      }
-      return { ...m, content: extractInlineData(m.content) };
-    });
+    // Normalize file/text content — extract text from PDFs/DOCX instead of sending raw base64
+    const normalized = await this.extractDocuments(cleaned);
 
     const withPolicy = this.ensureSearchPolicy(normalized);
     const rawSearchQuery = this.extractSearchQuery(withPolicy);
@@ -134,6 +103,64 @@ export class LlmService {
     })) {
       yield piece;
     }
+  }
+
+  /**
+   * Process all messages: extract text from embedded documents (PDF, DOCX, etc.)
+   * so LLMs receive actual content instead of useless base64 data.
+   */
+  private async extractDocuments(messages: ChatMessage[]): Promise<ChatMessage[]> {
+    return Promise.all(
+      messages.map(async (m) => {
+        if (Array.isArray(m.content)) {
+          const parts = await Promise.all(
+            m.content.map(async (p) =>
+              p.type === 'text' ? { ...p, text: await this.extractInlineData(p.text) } : p,
+            ),
+          );
+          return { ...m, content: parts };
+        }
+        return { ...m, content: await this.extractInlineData(m.content) };
+      }),
+    );
+  }
+
+  /**
+   * Async version of inline data extraction.
+   * Finds base64 data URLs, parses documents (PDF/DOCX) into readable text,
+   * decodes text-like formats, and replaces unparseable files with placeholders.
+   */
+  private async extractInlineData(content: string): Promise<string> {
+    const regex = new RegExp(DATA_URL_RE.source, DATA_URL_RE.flags);
+    const matches: { full: string; mime: string; b64: string; index: number }[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(content)) !== null) {
+      matches.push({ full: match[0], mime: match[1], b64: match[2], index: match.index });
+    }
+    if (matches.length === 0) return content;
+
+    const replacements = await Promise.all(
+      matches.map(async ({ mime, b64 }) => {
+        const buf = Buffer.from(b64, 'base64');
+        if (this.docParser.canParse(mime)) {
+          return this.docParser.parse(buf, mime);
+        }
+        // Images are handled via image_url parts; other binary types get a placeholder
+        if (/^image\//i.test(mime)) return `[image: ${mime}]`;
+        return `[embedded file: ${mime}]`;
+      }),
+    );
+
+    // Rebuild the string with replacements
+    let result = '';
+    let lastIndex = 0;
+    for (let i = 0; i < matches.length; i++) {
+      result += content.slice(lastIndex, matches[i].index);
+      result += replacements[i];
+      lastIndex = matches[i].index + matches[i].full.length;
+    }
+    result += content.slice(lastIndex);
+    return result;
   }
 
   private async maybeInjectSearch(
@@ -202,6 +229,9 @@ export class LlmService {
         '- Always prefer information from the search results over your training data when the results are relevant.',
         '- If search results contain dates, mention them to help the user assess freshness.',
         '- If the search results seem outdated or irrelevant for the query, acknowledge this limitation.',
+        '- When multiple sources agree, synthesize them into a coherent answer rather than listing sources one by one.',
+        '- When sources disagree, present the differing viewpoints with their respective sources.',
+        '- Always end search-backed answers with a brief "Sources" section listing the key references used.',
       ].join('\n'),
     };
 
@@ -287,6 +317,9 @@ export class LlmService {
     const optOut =
       /\b(no\s+search|don't\s+search|do\s+not\s+search|without\s+search|no\s+web|offline|from\s+memory|don't\s+browse|do\s+not\s+browse)\b/;
     if (optOut.test(trimmed)) return false;
+
+    // ── Instant reject: user pasted a URL (they already have the source) ──
+    if (/https?:\/\/\S{10,}/.test(trimmed)) return false;
 
     // ── Instant accept: user explicitly wants search ──
     const explicit =
@@ -392,6 +425,11 @@ export class LlmService {
       /^(hi|hello|hey|thanks|thank you|ok|okay|sure|yes|no|got it|understood|good|great|nice|cool|awesome|bye|goodbye|see you)\b/;
     if (conversational.test(trimmed)) score -= 5;
 
+    // Follow-up references to prior conversation (user is building on existing context)
+    const followUp =
+      /^(also|and|but|what about|how about|can you also|additionally|furthermore|moreover|in that case|then|so|okay so)\b/;
+    if (followUp.test(trimmed) && trimmed.length < 60) score -= 1;
+
     // Very short inputs that are likely conversational
     if (trimmed.length < 15 && score <= 0) return false;
 
@@ -399,30 +437,35 @@ export class LlmService {
   }
 
   private formatSearchMessage(query: string, results: SearchResult[]): string {
+    const resultsWithContent = results.filter((r) => r.pageContent);
+    const resultsWithoutContent = results.filter((r) => !r.pageContent);
+
     const lines = [
-      'Web search results (live, retrieved just now).',
-      `Query: ${query}`,
-      `Retrieved: ${new Date().toISOString()}`,
+      `Web search results (live). Query: "${query}" | Retrieved: ${new Date().toISOString()}`,
+      `${results.length} results found (${resultsWithContent.length} with full page content).`,
       '',
-      'Results:',
       ...results.map((result, idx) => {
         const parts: string[] = [];
-        parts.push(`${idx + 1}. ${result.title}`);
-        parts.push(`   URL: ${result.link}`);
-        if (result.date) parts.push(`   Date: ${result.date}`);
-        if (result.snippet) parts.push(`   Snippet: ${result.snippet}`);
+        parts.push(`[${idx + 1}] ${result.title}`);
+        parts.push(`    URL: ${result.link}`);
+        if (result.date) parts.push(`    Published: ${result.date}`);
+        if (result.snippet) parts.push(`    Summary: ${result.snippet}`);
         if (result.pageContent) {
-          parts.push(`   Page content: ${result.pageContent}`);
+          parts.push(`    --- Full content ---`);
+          parts.push(`    ${result.pageContent}`);
         }
         return parts.join('\n');
       }),
       '',
-      'Instructions:',
-      '- Use these search results as your PRIMARY source for answering the user\'s question.',
-      '- Cite sources inline using markdown links: [Source Title](url)',
-      '- When page content is available, prefer it over snippets for detailed answers.',
-      '- If results have dates, mention the recency of information.',
-      '- If none of the results directly answer the question, say so honestly.',
+      'Answer instructions:',
+      '- Use these search results as your PRIMARY information source.',
+      '- Cite sources inline: [Source Title](url). Group citations at paragraph end.',
+      '- Prefer full page content over summaries for accuracy.',
+      '- Synthesize information from multiple sources into a coherent answer.',
+      '- If sources disagree, present both viewpoints with citations.',
+      '- Mention dates when available to indicate freshness.',
+      '- End with a brief "Sources" section listing key references.',
+      '- If results don\'t answer the question, state that clearly.',
     ];
 
     return lines.join('\n');
@@ -785,8 +828,9 @@ export class LlmService {
 
     if (!resp.ok || !resp.body) {
       const txt = await resp.text().catch(() => '');
+      this.logger.error(`OpenAI error ${resp.status}: ${txt || resp.statusText}`);
       throw new InternalServerErrorException(
-        `OpenAI error ${resp.status}: ${txt || resp.statusText}`,
+        `Model request failed (status ${resp.status})`,
       );
     }
 
@@ -927,8 +971,9 @@ private async *streamGoogleGemini(opts: {
 
   if (!resp.ok || !resp.body) {
     const txt = await resp.text().catch(() => '');
+    this.logger.error(`Gemini error ${resp.status}: ${txt || resp.statusText}`);
     throw new InternalServerErrorException(
-      `Gemini error ${resp.status}: ${txt || resp.statusText}`,
+      `Model request failed (status ${resp.status})`,
     );
   }
 
@@ -1103,8 +1148,9 @@ private async *streamGoogleGemini(opts: {
 
     if (!resp.ok || !resp.body) {
       const txt = await resp.text().catch(() => '');
+      this.logger.error(`Anthropic error ${resp.status}: ${txt || resp.statusText}`);
       throw new InternalServerErrorException(
-        `Anthropic error ${resp.status}: ${txt || resp.statusText}`,
+        `Model request failed (status ${resp.status})`,
       );
     }
 
@@ -1190,8 +1236,9 @@ private async *streamGoogleGemini(opts: {
 
     if (!resp.ok || !resp.body) {
       const txt = await resp.text().catch(() => '');
+      this.logger.error(`Mistral error ${resp.status}: ${txt || resp.statusText}`);
       throw new InternalServerErrorException(
-        `Mistral error ${resp.status}: ${txt || resp.statusText}`,
+        `Model request failed (status ${resp.status})`,
       );
     }
 
@@ -1252,8 +1299,9 @@ private async *streamGoogleGemini(opts: {
 
     if (!resp.ok || !resp.body) {
       const txt = await resp.text().catch(() => '');
+      this.logger.error(`DeepSeek error ${resp.status}: ${txt || resp.statusText}`);
       throw new InternalServerErrorException(
-        `DeepSeek error ${resp.status}: ${txt || resp.statusText}`,
+        `Model request failed (status ${resp.status})`,
       );
     }
 
@@ -1314,8 +1362,9 @@ private async *streamGoogleGemini(opts: {
 
     if (!resp.ok || !resp.body) {
       const txt = await resp.text().catch(() => '');
+      this.logger.error(`Together error ${resp.status}: ${txt || resp.statusText}`);
       throw new InternalServerErrorException(
-        `Together error ${resp.status}: ${txt || resp.statusText}`,
+        `Model request failed (status ${resp.status})`,
       );
     }
 
@@ -1353,7 +1402,8 @@ private async *streamGoogleGemini(opts: {
       if (err?.name === 'AbortError') {
         throw new InternalServerErrorException(`${label} request timed out`);
       }
-      throw new InternalServerErrorException(`${label} request failed: ${err?.message || err}`);
+      this.logger.error(`${label} request failed: ${err?.message || err}`);
+      throw new InternalServerErrorException(`${label} request failed`);
     }
   }
 }
