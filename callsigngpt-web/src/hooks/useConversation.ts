@@ -21,6 +21,55 @@ function buildSystemMessage(modelKey: string, labels: Record<string, string>): U
   };
 }
 
+function coerceFolderId(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function sanitizeAttachment(attachment: UIMsg['attachment']): UIMsg['attachment'] | undefined {
+  if (!attachment || typeof attachment !== 'object') return undefined;
+
+  const type = attachment.type === 'image' || attachment.type === 'file' ? attachment.type : undefined;
+  const name = typeof attachment.name === 'string' ? attachment.name : '';
+  const mime = typeof attachment.mime === 'string' ? attachment.mime : '';
+  const size = typeof attachment.size === 'number' && Number.isFinite(attachment.size) ? attachment.size : 0;
+
+  if (!type || !name) return undefined;
+
+  if (type === 'image') {
+    return {
+      type,
+      name,
+      mime,
+      size,
+      src: typeof attachment.src === 'string' ? attachment.src : '',
+    };
+  }
+
+  return {
+    type,
+    name,
+    mime,
+    size,
+    ...(typeof attachment.src === 'string' ? { src: attachment.src } : {}),
+  };
+}
+
+function sanitizeMessageForPersistence(message: UIMsg): UIMsg {
+  return {
+    id: typeof message.id === 'string' ? message.id : String(message.id ?? ''),
+    role: message.role,
+    content: typeof message.content === 'string' ? message.content : String(message.content ?? ''),
+    ...(typeof message.createdAt === 'number' && Number.isFinite(message.createdAt)
+      ? { createdAt: message.createdAt }
+      : {}),
+    ...(sanitizeAttachment(message.attachment) ? { attachment: sanitizeAttachment(message.attachment) } : {}),
+  };
+}
+
+function sanitizeMessagesForPersistence(messages: UIMsg[]): UIMsg[] {
+  return withTimestamps(messages).map(sanitizeMessageForPersistence);
+}
+
 const extractConversation = (data: any) => (data?.conversation ? data.conversation : data);
 type ConversationOpts = { accessToken?: string; apiClient?: HttpClient | null };
 
@@ -354,14 +403,14 @@ export function useConversation(
     
     try {
       // Use ref to get the latest messages (includes optimistic updates)
-      const currentMsgs = msgsRef.current;
+      const currentMsgs = sanitizeMessagesForPersistence(msgsRef.current);
       const firstUser = currentMsgs.find((m) => m.role === 'user');
       // Short placeholder title — the LLM-based generate-title will overwrite it
       const title =
         firstUser?.content?.split(/\s+/).slice(0, 4).join(' ').slice(0, 40) ||
         UI_TEXT.app.newChatTitle;
 
-      const pendingFolderId = pendingFolderIdRef.current;
+      const pendingFolderId = coerceFolderId(pendingFolderIdRef.current);
       const createLocal = async () => {
         try {
           const payload: Record<string, any> = { title, model, messages: currentMsgs };
@@ -493,7 +542,11 @@ export function useConversation(
           }
           return m;
         });
-        await sendConversationPatch(cid, { messages: messagesToSave }, '[appendMessages]');
+        await sendConversationPatch(
+          cid,
+          { messages: sanitizeMessagesForPersistence(messagesToSave) },
+          '[appendMessages]',
+        );
       }
       
       isCreatingConversation.current = false;
@@ -521,7 +574,11 @@ export function useConversation(
       const cid = conversationId || pendingConversationId.current;
       if (!cid) return;
       try {
-        await sendConversationPatch(cid, { messages: msgsRef.current }, '[useConversation]');
+        await sendConversationPatch(
+          cid,
+          { messages: sanitizeMessagesForPersistence(msgsRef.current) },
+          '[useConversation]',
+        );
       } catch (_err) {
         console.warn('[useConversation] saveCurrentChatIfNeeded failed:', _err);
       }
@@ -531,7 +588,7 @@ export function useConversation(
   const resetToNewChat = useCallback(
     (folderId?: string | null) => {
       resetLocal();
-      pendingFolderIdRef.current = folderId ?? null;
+      pendingFolderIdRef.current = coerceFolderId(folderId);
       const url = new URL(window.location.href);
       url.searchParams.delete('c');
       router.replace(`${url.pathname}${url.search}`);

@@ -769,6 +769,13 @@ export class LlmService {
     const modelName = String(opts.model || '').toLowerCase();
     const forbidsTemperature = /(?:^|-)o1|nano/.test(modelName);
     const forbidsTokens = /nano/.test(modelName);
+    const tokenCap = (() => {
+      // Conservative caps to avoid provider-side 400s on smaller/older models.
+      if (/gpt-4o-mini/.test(modelName)) return 4096;
+      if (/gpt-4o\b/.test(modelName)) return 8192;
+      if (/gpt-5|gpt-4\.1|(?:^|-)o1/.test(modelName)) return 20000;
+      return 4096;
+    })();
 
     // Truncate/guard image sizes to reduce request size
     // Allow large images; default ~50MB base64 unless overridden
@@ -808,9 +815,10 @@ export class LlmService {
       payload.temperature = opts.temperature;
     }
     if (!forbidsTokens && opts.max_tokens) {
+      const boundedMaxTokens = Math.max(1, Math.min(opts.max_tokens, tokenCap));
       // Newer OpenAI models (e.g., gpt-5 / gpt-4.1 / o1 variants) require max_completion_tokens
       const useCompletionParam = /gpt-5|gpt-4\.1|(?:^|-)o1/i.test(opts.model);
-      payload[useCompletionParam ? 'max_completion_tokens' : 'max_tokens'] = opts.max_tokens;
+      payload[useCompletionParam ? 'max_completion_tokens' : 'max_tokens'] = boundedMaxTokens;
     }
 
     const resp = await this.fetchWithUpstreamTimeout(

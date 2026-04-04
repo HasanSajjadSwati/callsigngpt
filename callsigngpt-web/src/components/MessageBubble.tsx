@@ -218,6 +218,27 @@ function CodeBlock({
 
 /* ─── File delivery card ─────────────────────────────────────────────── */
 
+/* ─── Detect document extensions that use export conversion ─────────── */
+const DOCX_EXPORT_EXTS = new Set(['docx', 'doc', 'odt', 'rtf']);
+const PDF_EXPORT_EXTS = new Set(['pdf']);
+
+function getFileExt(name: string): string {
+  const dot = name.lastIndexOf('.');
+  return dot !== -1 ? name.slice(dot + 1).toLowerCase() : '';
+}
+
+/** Download a blob object URL, triggering a save-file dialog. */
+function triggerBlobDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function FileCard({
   filename,
   content,
@@ -225,28 +246,56 @@ function FileCard({
   filename: string;
   content: string;
 }) {
+  const ext = getFileExt(filename);
+  const outputFmt: 'docx' | 'pdf' | 'txt' = PDF_EXPORT_EXTS.has(ext)
+    ? 'pdf'
+    : DOCX_EXPORT_EXTS.has(ext)
+      ? 'docx'
+      : 'txt';
+  const useExportApi = outputFmt === 'docx' || outputFmt === 'pdf';
+  const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+
+  const displayFilename = useExportApi
+    ? outputFmt === 'docx'
+      ? filename.replace(/\.[^.]+$/, '.docx')
+      : filename.replace(/\.[^.]+$/, '.pdf')
+    : filename;
+
   const size = useMemo(() => new Blob([content]).size, [content]);
 
-  const handleDownload = useCallback(() => {
+  const handleDownload = useCallback(async () => {
+    if (downloading) return;
+    setDownloading(true);
     try {
-      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      if (useExportApi) {
+        // Call the export API to generate a real Word/PDF document
+        const res = await fetch('/api/documents/export', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content, filename: displayFilename, format: outputFmt }),
+        });
+        if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+        const blob = await res.blob();
+        triggerBlobDownload(blob, displayFilename);
+      } else {
+        // Plain text download
+        const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+        triggerBlobDownload(blob, displayFilename);
+      }
       setDownloaded(true);
-      setTimeout(() => setDownloaded(false), 2000);
-    } catch { /* noop */ }
-  }, [content, filename]);
+      setTimeout(() => setDownloaded(false), 2500);
+    } catch (err) {
+      console.error('[FileCard] Download failed:', err);
+    } finally {
+      setDownloading(false);
+    }
+  }, [content, displayFilename, downloading, outputFmt, useExportApi]);
 
   return (
     <div className="my-3 first:mt-0 last:mb-0 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-alt)] overflow-hidden">
-      <div className="flex items-center justify-between gap-3 p-4">
+      <div className="flex flex-col gap-3 p-4">
+        {/* File info row */}
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-[var(--ui-surface)] border border-[var(--ui-border)]">
             <svg viewBox="0 0 24 24" className="h-6 w-6 text-[var(--ui-accent)]" fill="none" stroke="currentColor" strokeWidth="1.5">
@@ -254,28 +303,48 @@ function FileCard({
               <path d="M14 3v6h6" />
             </svg>
           </div>
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-white truncate">{filename}</p>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-white truncate">{displayFilename}</p>
             <p className="text-xs text-[var(--ui-text-muted)]">{formatBytes(size)}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={handleDownload}
-          className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-accent-soft)] px-4 py-2 text-sm font-medium text-white transition-colors duration-150"
-        >
-          {downloaded ? (
-            <>
-              <CheckIcon className="w-4 h-4 text-emerald-400" />
-              <span className="text-emerald-400">Downloaded!</span>
-            </>
-          ) : (
-            <>
-              <DownloadIcon className="w-4 h-4" />
-              <span>Download</span>
-            </>
-          )}
-        </button>
+
+        {/* Download row */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={downloading}
+            className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] hover:bg-[var(--ui-accent-soft)] px-4 py-2 text-sm font-medium text-white transition-colors duration-150 disabled:opacity-50"
+          >
+            {downloaded ? (
+              <>
+                <CheckIcon className="w-4 h-4 text-emerald-400" />
+                <span className="text-emerald-400">Downloaded!</span>
+              </>
+            ) : downloading ? (
+              <>
+                <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="9" strokeOpacity="0.25" />
+                  <path d="M12 3a9 9 0 0 1 9 9" />
+                </svg>
+                <span>Generating…</span>
+              </>
+            ) : (
+              <>
+                <DownloadIcon className="w-4 h-4" />
+                <span>Download</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Note for rich-format outputs */}
+        {useExportApi && (
+          <p className="text-[11px] text-[var(--ui-text-muted)] leading-snug">
+            Delivered with basic formatting from markdown/text. Complex original layout (tables, images) may be simplified.
+          </p>
+        )}
       </div>
     </div>
   );

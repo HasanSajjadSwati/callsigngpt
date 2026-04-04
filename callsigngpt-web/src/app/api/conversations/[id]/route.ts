@@ -3,7 +3,20 @@ import { NextResponse } from 'next/server';
 import { APP_CONFIG, UI_TEXT } from '@/config/uiText';
 import { supabaseServer } from '@/lib/supabaseServer';
 
-type AnyMessage = { role?: string; content?: string | null };
+type AnyAttachment = {
+  type?: string;
+  name?: string;
+  mime?: string;
+  size?: number;
+  src?: string;
+};
+type AnyMessage = {
+  id?: string;
+  role?: string;
+  content?: string | null;
+  createdAt?: number | string | null;
+  attachment?: AnyAttachment | null;
+};
 const MAX_TITLE_LENGTH = APP_CONFIG.conversation.maxTitleLength ?? 80;
 const PLACEHOLDER_TITLE = UI_TEXT.app.newChatTitle.toLowerCase();
 const getBearerToken = (req: Request) => {
@@ -18,6 +31,31 @@ async function ensureFolderAccess(sb: any, userId: string, folderId: string) {
     .single();
   if (error || !data) return false;
   return data.user_id === userId;
+}
+
+function normalizeAttachment(raw: AnyAttachment | null | undefined) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const type = raw.type === 'image' || raw.type === 'file' ? raw.type : undefined;
+  const name = typeof raw.name === 'string' ? raw.name.slice(0, 255) : '';
+  if (!type || !name) return undefined;
+
+  return {
+    type,
+    name,
+    mime: typeof raw.mime === 'string' ? raw.mime.slice(0, 255) : '',
+    size: typeof raw.size === 'number' && Number.isFinite(raw.size) ? raw.size : 0,
+    ...(typeof raw.src === 'string' ? { src: raw.src } : {}),
+  };
+}
+
+function normalizeMessage(raw: AnyMessage) {
+  return {
+    ...(typeof raw.id === 'string' ? { id: raw.id.slice(0, 255) } : {}),
+    role: (raw.role ?? '').toString().slice(0, 20),
+    content: typeof raw.content === 'string' ? raw.content.slice(0, 4000) : null,
+    ...(raw.createdAt !== undefined && raw.createdAt !== null ? { createdAt: raw.createdAt } : {}),
+    ...(normalizeAttachment(raw.attachment) ? { attachment: normalizeAttachment(raw.attachment) } : {}),
+  };
 }
 
 function deriveTitle(messages: AnyMessage[] | undefined, fallback = UI_TEXT.app.newChatTitle) {
@@ -89,7 +127,7 @@ export async function PATCH(
   const hasFolderKey = 'folderId' in body || 'folder_id' in body;
   const rawFolderId = body.folderId ?? body.folder_id;
   const folderId = typeof rawFolderId === 'string' ? rawFolderId.trim() : rawFolderId;
-  if (messagesFromBody) updates.messages = messagesFromBody;
+  if (messagesFromBody) updates.messages = messagesFromBody.map(normalizeMessage);
   if ('model' in body) updates.model = body.model;
 
   // ensure row exists & belongs to user

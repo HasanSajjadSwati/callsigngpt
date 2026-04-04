@@ -56,9 +56,6 @@ class ChatMessageDto {
   @ValidateIf((o) => typeof o.content === 'string')
   @IsString()
   @IsNotEmpty()
-  content!: string | (TextContentPartDto | ImageContentPartDto)[];
-
-  // When content is an array, validate each element
   @ValidateIf((o) => Array.isArray(o.content))
   @IsArray()
   @ValidateNested({ each: true })
@@ -71,7 +68,7 @@ class ChatMessageDto {
       return Object.assign(new TextContentPartDto(), part);
     });
   })
-  contentArray?: (TextContentPartDto | ImageContentPartDto)[];
+  content!: string | (TextContentPartDto | ImageContentPartDto)[];
 }
 
 // --- Search options ---

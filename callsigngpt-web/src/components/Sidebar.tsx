@@ -952,7 +952,7 @@ export default function Sidebar({
           </div>
 
           <button
-            onClick={onNewChat}
+              onClick={() => onNewChat()}
             className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[color:var(--ui-border)] bg-[color:var(--ui-surface)] px-3.5 py-2.5 text-sm font-medium text-[color:var(--ui-text)] transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[color:var(--ui-accent)]"
           >
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">

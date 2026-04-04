@@ -3,7 +3,20 @@ import { z } from 'zod';
 import { APP_CONFIG, UI_TEXT } from '@/config/uiText';
 import { supabaseServer } from '@/lib/supabaseServer';
 
-type AnyMessage = { role?: string; content?: string | null };
+type AnyAttachment = {
+  type?: string;
+  name?: string;
+  mime?: string;
+  size?: number;
+  src?: string;
+};
+type AnyMessage = {
+  id?: string;
+  role?: string;
+  content?: string | null;
+  createdAt?: number | string | null;
+  attachment?: AnyAttachment | null;
+};
 const MAX_TITLE_LENGTH = APP_CONFIG.conversation.maxTitleLength ?? 80;
 const PLACEHOLDER_TITLE = UI_TEXT.app.newChatTitle.toLowerCase();
 const MAX_MESSAGES = 200;
@@ -20,6 +33,31 @@ async function ensureFolderAccess(sb: any, userId: string, folderId: string) {
     .single();
   if (error || !data) return false;
   return data.user_id === userId;
+}
+
+function normalizeAttachment(raw: AnyAttachment | null | undefined) {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const type = raw.type === 'image' || raw.type === 'file' ? raw.type : undefined;
+  const name = typeof raw.name === 'string' ? raw.name.slice(0, 255) : '';
+  if (!type || !name) return undefined;
+
+  return {
+    type,
+    name,
+    mime: typeof raw.mime === 'string' ? raw.mime.slice(0, 255) : '',
+    size: typeof raw.size === 'number' && Number.isFinite(raw.size) ? raw.size : 0,
+    ...(typeof raw.src === 'string' ? { src: raw.src } : {}),
+  };
+}
+
+function normalizeMessage(raw: AnyMessage) {
+  return {
+    ...(typeof raw.id === 'string' ? { id: raw.id.slice(0, 255) } : {}),
+    role: (raw.role ?? '').toString().slice(0, 20),
+    content: typeof raw.content === 'string' ? raw.content.slice(0, MAX_MESSAGE_LENGTH) : null,
+    ...(raw.createdAt !== undefined && raw.createdAt !== null ? { createdAt: raw.createdAt } : {}),
+    ...(normalizeAttachment(raw.attachment) ? { attachment: normalizeAttachment(raw.attachment) } : {}),
+  };
 }
 
 function deriveTitle(
@@ -92,9 +130,20 @@ export async function POST(req: Request) {
     messages: z
       .array(
         z.object({
+          id: z.string().max(255).optional(),
           role: z.string().trim().max(20).optional(),
           content: z
             .union([z.string().max(MAX_MESSAGE_LENGTH), z.null()])
+            .optional(),
+          createdAt: z.union([z.number(), z.string(), z.null()]).optional(),
+          attachment: z
+            .object({
+              type: z.enum(['image', 'file']).optional(),
+              name: z.string().max(255).optional(),
+              mime: z.string().max(255).optional(),
+              size: z.number().optional(),
+              src: z.string().optional(),
+            })
             .optional(),
         }),
       )
@@ -117,10 +166,7 @@ export async function POST(req: Request) {
     }
   }
   const normalizedMessages: AnyMessage[] = Array.isArray(messages)
-    ? messages.map((m) => ({
-        role: (m.role ?? '').toString().slice(0, 20),
-        content: typeof m.content === 'string' ? m.content.slice(0, MAX_MESSAGE_LENGTH) : null,
-      }))
+    ? messages.map(normalizeMessage)
     : [];
   const finalTitle = pickTitle(
     typeof title === 'string' ? title : undefined,

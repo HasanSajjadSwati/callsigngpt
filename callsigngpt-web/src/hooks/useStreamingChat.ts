@@ -185,11 +185,11 @@ const pickMaxTokens = (messages: ChatMessage[]) => {
 
 /** Patterns that indicate the user wants a file delivered. */
 const FILE_REQUEST_RE =
-  /\b(write|save|update|edit|rewrite|send|create|make|generate|give|produce|export|download).{0,30}(file|document|it|the .{1,20})\b|\b(send|give).{0,15}(me|us|back)\b|\bdo it yourself\b|\bdo it\b/i;
+  /\b(write|save|update|edit|rewrite|send|create|make|generate|give|produce|export|download|convert).{0,40}(file|document|doc|docx|pdf|word|it|this|the .{1,20})\b|\b(send|give).{0,20}(me|us|back)\b|\b(as|in)\s+(a\s+)?(doc|docx|pdf|word\s+doc(?:ument)?)\b|\bdo it yourself\b|\bdo it\b/i;
 
 /** Patterns that indicate the LLM refused to deliver a file. */
 const FILE_REFUSAL_RE =
-  /can(?:'?t| ?not)\b.{0,40}(?:modify|edit|create|write|send|generate|produce|make|download|update|save).{0,20}(?:file|document)|don'?t have.{0,30}(?:capability|ability|access)|open.{0,20}(?:text editor|notepad|textedit)|Here'?s.{0,15}(?:step-by-step|simple) (?:guide|process)|(?:copy|paste).{0,15}(?:following|content|text)/i;
+  /can(?:'?t|’t| ?not)\b.{0,60}(?:attach|modify|edit|create|write|send|generate|produce|make|download|update|save).{0,30}(?:file|document|doc|docx|pdf)|don'?t have.{0,30}(?:capability|ability|access)|open.{0,25}(?:text editor|notepad|textedit|word|google docs)|Here'?s.{0,20}(?:step-by-step|simple) (?:guide|process)|(?:copy|paste).{0,20}(?:following|content|text)/i;
 
 /** Map MIME types to fenced code block language tags. */
 const MIME_TO_LANG: Record<string, string> = {
@@ -254,6 +254,174 @@ function extractContentFromRefusal(text: string): string | null {
   return null;
 }
 
+function preferredExtensionFromRequest(userText: string): string {
+  const t = (userText || '').toLowerCase();
+  const specs: Array<{ re: RegExp; ext: string }> = [
+    { re: /\bdocx?\b|\bword\s+doc(?:ument)?\b/i, ext: 'docx' },
+    { re: /\bpdf\b/i, ext: 'pdf' },
+    { re: /\bjson\b|\.json\b/i, ext: 'json' },
+    { re: /\btypescript\b|\bts\b|\.ts\b/i, ext: 'ts' },
+    { re: /\btsx\b|\.tsx\b/i, ext: 'tsx' },
+    { re: /\bjavascript\b|\bjs\b|\.js\b/i, ext: 'js' },
+    { re: /\bjsx\b|\.jsx\b/i, ext: 'jsx' },
+    { re: /\bpython\b|\bpy\b|\.py\b/i, ext: 'py' },
+    { re: /\byaml\b|\byml\b|\.ya?ml\b/i, ext: 'yaml' },
+    { re: /\bxml\b|\.xml\b/i, ext: 'xml' },
+    { re: /\bcsv\b|\.csv\b/i, ext: 'csv' },
+    { re: /\bmarkdown\b|\.md\b/i, ext: 'md' },
+    { re: /\bsql\b|\.sql\b/i, ext: 'sql' },
+    { re: /\bhtml\b|\.html?\b/i, ext: 'html' },
+    { re: /\bcss\b|\.css\b/i, ext: 'css' },
+    { re: /\bshell\b|\bbash\b|\.sh\b/i, ext: 'sh' },
+    { re: /\btext\b|\btxt\b|\.txt\b/i, ext: 'txt' },
+  ];
+  const hit = specs.find((s) => s.re.test(t));
+  return hit?.ext || 'txt';
+}
+
+function languageForExtension(ext: string): string {
+  const e = (ext || 'txt').toLowerCase();
+  if (e === 'json') return 'json';
+  if (e === 'ts' || e === 'tsx') return 'typescript';
+  if (e === 'js' || e === 'jsx') return 'javascript';
+  if (e === 'py') return 'python';
+  if (e === 'md') return 'markdown';
+  if (e === 'yaml' || e === 'yml') return 'yaml';
+  if (e === 'xml') return 'xml';
+  if (e === 'csv') return 'csv';
+  if (e === 'sql') return 'sql';
+  if (e === 'html') return 'html';
+  if (e === 'css') return 'css';
+  if (e === 'sh') return 'bash';
+  return 'text';
+}
+
+function buildDeliveryFilename(sourceName: string, preferredExt: string) {
+  const base = (sourceName || 'document').replace(/\.[^.]+$/, '') || 'document';
+  return `${base}.${preferredExt || 'txt'}`;
+}
+
+function unwrapNestedCodeFences(text: string): string {
+  let out = (text || '').trim();
+
+  for (let i = 0; i < 3; i++) {
+    const wrapped = out.match(/^```(?:[\w+-]+(?::[^\n]+)?)\n([\s\S]*?)\n?```$/);
+    if (!wrapped) break;
+    out = wrapped[1].trim();
+  }
+
+  out = out.replace(/^(?:text|plaintext|markdown)\s*\n/i, '').trim();
+  return out;
+}
+
+function repairMalformedFileDeliveryBlock(text: string): string {
+  if (!text) return text;
+
+  // Repair a nested shape like:
+  // ```text:file.pdf
+  // ```text
+  // body
+  // ```
+  // ```
+  return text.replace(
+    /```(\w+):([^\n]+)\n```(?:[\w+-]+)?\n([\s\S]*?)\n```\s*```/g,
+    (_match, outerLang, filename, body) => `\`\`\`${outerLang}:${String(filename).trim()}\n${unwrapNestedCodeFences(String(body))}\n\`\`\``,
+  );
+}
+
+function normalizeAssistantContentForFile(text: string): string {
+  if (!text) return '';
+  let out = text.trim();
+
+  // Remove common refusal preamble line
+  out = out.replace(/^I can(?:'?t|’t| ?not)[^\n]*\n?/i, '').trim();
+
+  // Remove boilerplate lead-in lines (repeat until stable to handle multi-line preambles)
+  for (let i = 0; i < 5; i++) {
+    const prev = out;
+    out = out.replace(/^Below is[^\n]*\n?/i, '').trim();
+    out = out.replace(/^To create a? (?:DOCX|PDF|Word)[^\n]*\n?/i, '').trim();
+    out = out.replace(/^I will (?:summarize|convert|create|generate|provide|format|now)[^\n]*\n?/i, '').trim();
+    out = out.replace(/^Here(?:'s| is)[^\n]*(?:DOCX|document|content|information|structured|PDF)[^\n]*\n?/i, '').trim();
+    out = out.replace(/^(?:Sure[,!]?|Certainly[,!]?|Of course[,!]?)\s*(?:here[^\n]*)?\n?/i, '').trim();
+    out = out.replace(/^(?:The\s+)?following\s+is\s+the[^\n]*\n?/i, '').trim();
+    out = out.replace(/^I (?:currently )?(?:don'?t|do not) have (?:the )?(?:capability|ability|access)[^\n]*\n?/i, '').trim();
+    out = out.replace(/^However,\s+I can (?:guide|help|show|walk)[^\n]*\n?/i, '').trim();
+    if (out === prev) break;
+  }
+
+  // Drop procedural instruction sections often appended after content.
+  // Keep the actual document body and strip "how to save/create" tails.
+  const instructionMarkers = [
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)How\s+to\s+(?:turn|create|make|save|format|generate)\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)Instructions?\s+(?:to|for)\s+(?:create|creating|make|making|generate|generating)\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)Steps?\s+(?:to|for)\s+(?:create|creating|make|making|generate|generating|build|building)\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)Open\s+(?:Microsoft\s+Word|a\s+Word\s+Processing)\b/i,
+    /(^|\n)\s*(?:\d+\.|[-*○●])\s*(?:\*{0,2})Open\s+Microsoft\s+Word\b/i,
+    /(^|\n)\s*(?:\d+\.|[-*○●])\s*(?:\*{0,2})Create\s+a\s+New\s+(?:Document|File)\b/i,
+    /(^|\n)\s*(?:\d+\.|[-*○●])\s*(?:\*{0,2})Insert\s+(?:the\s+)?Content\b/i,
+    /(^|\n)\s*(?:\d+\.|[-*○●])\s*(?:\*{0,2})Format\s+the\s+Document\b/i,
+    /(^|\n)\s*(?:\d+\.|[-*○●])\s*(?:\*{0,2})Copy\s+(?:everything|the\s+content|and\s+paste)\b/i,
+    /(^|\n)\s*(?:\d+\.|[-*○●])\s*(?:\*{0,2})Paste\s+it\s+into\b/i,
+    /(^|\n)\s*(?:\d+\.|[-*○●])\s*(?:\*{0,2})In\s+Word\s*[:\-]\s*(?:go\s+to\s+)?File\b/i,
+    /(^|\n)\s*(?:\d+\.|[-*○●])\s*In\s+Google\s+Docs\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)(?:Insert\s+Title|Save\s+the\s+Document|Insert\s+Title\s+and\s+Content)\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)Example\s+Formatting\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)Example\s+Document\s+Structure\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)Download\s+(?:the\s+)?(?:DOCX|PDF|Word|document|file)\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)Using\s+(?:Microsoft\s+Word|Google\s+Docs|Online\s+Converters?|Libre\s+Office|Open\s+Office)\b/i,
+    /(^|\n)\s*(?:\*{0,2}|#{1,3}\s*)(?:Method|Option|Step)\s+\d+\s*[:–—]/i,
+    /(^|\n)\s*(?:\d+\.|-|\*)\s*(?:\*{0,2})(?:Open|Upload|Download)\s+(?:the|your|a)\s+(?:document|file|DOCX|PDF|Word)\b/i,
+    /(^|\n)\s*I\s+will\s+create\s+the\s+(?:DOCX|PDF|Word|document)\s+(?:document\s+)?for\s+you\b/i,
+    /(^|\n)\s*Please\s+click\s+(?:the\s+)?(?:link|button|here)\b/i,
+    /(^|\n)\s*\(Note:\s/i,
+    /(^|\n)\s*\[Download\b/i,
+    /(^|\n)\s*sandbox:\//i,
+    /(^|\n)\s*If\s+you\s+tell\s+me\s+what\s+exact\s+layout\b/i,
+    /(^|\n)\s*If\s+you\s+want,?\s+I\s+can\s+also\b/i,
+    /(^|\n)\s*If\s+you\s+tell\s+me\s+whether\s+you\s+want\b/i,
+    /(^|\n)\s*If\s+you\s+need\s+(?:any\s+)?(?:further\s+)?(?:changes|assistance|help|information)\b/i,
+    /(^|\n)\s*If\s+you\s+have\s+(?:any\s+)?(?:specific\s+)?questions?\b/i,
+    /(^|\n)\s*(?:Feel|Please)\s+free\s+to\s+(?:ask|reach\s+out|let\s+me\s+know)\b/i,
+    /(^|\n)\s*Let\s+me\s+know\s+if\s+you\s+(?:need|have|want)\b/i,
+    /(^|\n)\s*By\s+following\s+these\s+steps\b/i,
+    /(^|\n)\s*You\s+can\s+now\b/i,
+    /(^|\n)\s*programmatically\b/i,
+    /(^|\n)\s*using\s+a\s+word\s+processor\b/i,
+  ];
+
+  let cutAt = -1;
+  for (const markerRe of instructionMarkers) {
+    const idx = out.search(markerRe);
+    if (idx >= 0 && (cutAt === -1 || idx < cutAt)) {
+      cutAt = idx;
+    }
+  }
+  if (cutAt >= 0) {
+    out = out.slice(0, cutAt).trim();
+  }
+
+  // Trim repeated separators at ends
+  out = out.replace(/^[\s\-_*]{3,}\s*/g, '').replace(/[\s\-_*]{3,}\s*$/g, '').trim();
+  return out;
+}
+
+function isBadGeneratedFileContent(text: string): boolean {
+  const t = (text || '').trim();
+  if (!t) return true;
+  return /python-docx|from\s+docx\s+import\s+Document|make_docx\.py|option\s+a|option\s+b|how\s+to\s+run|upload\s+the\s+pdf|i\s+don['']t\s+have\s+the\s+actual\s+pdf|copy-?paste|open\s+microsoft\s+word|google\s+docs|using\s+microsoft\s+word|using\s+google\s+docs|using\s+online\s+converter|don['']t\s+have\s+the\s+capability|do\s+not\s+have\s+the\s+capability|cannot\s+directly\s+create|save\s+as\s+type.*dropdown|smallpdf|ilovepdf/i.test(t);
+}
+
+function findPreviousUsefulAssistantContent(allMessages: UIMsg[]): string | null {
+  const previousAssistant = [...allMessages]
+    .reverse()
+    .find((m) => m.role === 'assistant' && typeof m.content === 'string' && m.content.trim().length > 120);
+  if (!previousAssistant) return null;
+  const cleaned = normalizeAssistantContentForFile(previousAssistant.content);
+  if (!cleaned || isBadGeneratedFileContent(cleaned)) return null;
+  return cleaned;
+}
+
 /**
  * Post-process the assistant's final response.
  * If the user asked for a file and the LLM refused, rewrite the response
@@ -264,34 +432,80 @@ function autoFixFileDelivery(
   userText: string,
   allMessages: UIMsg[],
 ): string {
-  // Already has a file delivery block — nothing to fix
-  if (/```\w+:[^\n]+\n/.test(assistantText)) return assistantText;
+  assistantText = repairMalformedFileDeliveryBlock(assistantText);
+
+  // Already has a non-empty file delivery block — nothing to fix
+  if (/```\w+:[^\n]+\n[\s\S]*?\S[\s\S]*?```/.test(assistantText)) return assistantText;
 
   // Check if the user asked for a file
   if (!FILE_REQUEST_RE.test(userText)) return assistantText;
-
-  // Check if the assistant refused
-  if (!FILE_REFUSAL_RE.test(assistantText)) return assistantText;
+  const assistantLooksLikeRefusal = FILE_REFUSAL_RE.test(assistantText);
 
   // Find the most recent file attachment in the conversation
   const recentFile = [...allMessages].reverse().find(m => m.attachment?.type === 'file');
-  const filename = recentFile?.attachment?.name || 'file.txt';
+  const preferredExt = preferredExtensionFromRequest(userText);
+  const filename = buildDeliveryFilename(recentFile?.attachment?.name || 'document', preferredExt);
   const mime = recentFile?.attachment?.mime || 'text/plain';
   const lang = getLangForMime(mime);
 
-  // Extract the actual content the LLM wanted to deliver
-  const content = extractContentFromRefusal(assistantText);
+  // Extract the actual content the LLM wanted to deliver.
+  // If it's not a refusal but user explicitly requested a document format,
+  // still wrap rich content into a downloadable file card.
+  const cleanedFull = normalizeAssistantContentForFile(assistantText);
+  const extracted = extractContentFromRefusal(assistantText);
+  let content = unwrapNestedCodeFences(extracted || cleanedFull || assistantText.trim());
+
+  // If extracted content is suspiciously short, use the cleaned full response instead.
+  if (cleanedFull && content.length < Math.max(220, Math.floor(cleanedFull.length * 0.5))) {
+    content = unwrapNestedCodeFences(cleanedFull);
+  }
+
   if (!content) return assistantText;
 
-  // For binary doc formats (DOCX, PDF, etc.) the extracted content is plain text,
-  // so deliver as .txt rather than keeping the original binary extension.
-  const BINARY_DOC_RE = /officedocument|msword|pdf|rtf/i;
+  const previousGoodAssistant = findPreviousUsefulAssistantContent(allMessages);
+  if (isBadGeneratedFileContent(content) && previousGoodAssistant) {
+    content = previousGoodAssistant;
+  } else if (isBadGeneratedFileContent(content) && !previousGoodAssistant) {
+    // Content is entirely a refusal/instruction block with no real document data to fall back on.
+    // Return the original assistant text so the refusal shows in chat rather than inside a file.
+    return assistantText;
+  }
+
+  if (isBadGeneratedFileContent(content) && !previousGoodAssistant) {
+    // Nothing useful to put in a file — show the refusal in chat as-is so the
+    // user sees what happened rather than getting a file full of instructions.
+    return assistantText;
+  }
+
+  const explicitFileFormatRequest = preferredExt !== 'txt';
+
+  // For small documents (for example, a short shareholder list), still force file
+  // delivery when the user explicitly requested DOCX/PDF. Otherwise the model's
+  // plain ```text fenced block renders as a normal code block with a .txt save action.
+  if (!assistantLooksLikeRefusal && content.length < 80 && !explicitFileFormatRequest) {
+    return assistantText;
+  }
+
+  // For binary doc formats (DOCX, PDF, etc.), the extracted content is plain text.
+  // Keep the original extension for DOCX so the FileCard generates a real Word file.
+  // For PDF, deliver as .docx (Word users can save as PDF).
+  const PDF_RE = /pdf$/i;
   let deliveryFilename = filename;
-  if (BINARY_DOC_RE.test(mime)) {
+  if (PDF_RE.test(mime)) {
+    const baseName = filename.replace(/\.[^.]+$/, '');
+    deliveryFilename = `${baseName}.docx`;
+  }
+  // For other binary formats (PPT, XLS, etc.) fall back to .txt
+  const OTHER_BINARY_RE = /vnd\.(ms-powerpoint|ms-excel|oasis)|rtf/i;
+  if (OTHER_BINARY_RE.test(mime)) {
     const baseName = filename.replace(/\.[^.]+$/, '');
     deliveryFilename = `${baseName}.txt`;
   }
-  return `Here's your file:\n\n\`\`\`${lang}:${deliveryFilename}\n${content}\n\`\`\``;
+  // Respect explicit user preference for any supported extension.
+  deliveryFilename = buildDeliveryFilename(deliveryFilename, preferredExt);
+  const deliveryLang = languageForExtension(preferredExt);
+
+  return `Here's your file:\n\n\`\`\`${deliveryLang}:${deliveryFilename}\n${content}\n\`\`\``;
 }
 
 const buildMessageContent = (message: UIMsg): ChatMessage['content'] => {
@@ -533,6 +747,15 @@ export function useStreamingChat({
       const userText = (text ?? '').trim();
       if (!userText && !attachment) return;
       if (loading) return;
+      const shouldBufferFileResponse = FILE_REQUEST_RE.test(userText);
+      const shouldDisableSearch =
+        searchMode === 'auto' &&
+        (
+          attachment?.type === 'file' ||
+          attachment?.type === 'image' ||
+          shouldBufferFileResponse ||
+          /\b(this|attached)\s+(doc|document|pdf|file|image|photo|picture|screenshot)\b/i.test(userText)
+        );
 
       const now = Date.now();
 
@@ -543,7 +766,12 @@ export function useStreamingChat({
         attachment,
         createdAt: now,
       };
-      const assistantMsg: UIMsg = { id: genId(), role: 'assistant', content: '', createdAt: now };
+      const assistantMsg: UIMsg = {
+        id: genId(),
+        role: 'assistant',
+        content: shouldBufferFileResponse ? 'Preparing file...' : '',
+        createdAt: now,
+      };
       const useTypewriter = /nano/i.test(modelRef.current);
 
       // Capture history snapshot BEFORE setMsgs adds the placeholder messages.
@@ -600,6 +828,8 @@ File and document capabilities:
 - You CAN read, analyze, summarize, edit, rewrite, translate, and answer questions about any attached file content. The content is already available to you in the conversation.
 - When a user asks you to create, edit, update, rewrite, or send a file, you MUST deliver it as a downloadable file. To do this, use a special code fence format with the filename: \`\`\`lang:filename.ext (e.g. \`\`\`text:Hello.txt, \`\`\`python:script.py, \`\`\`json:config.json). This renders as a downloadable file card — NOT a code block.
 - IMPORTANT: When the user asks for a FILE (e.g. "send me the file", "create a file", "write it to the file", "update the file"), ALWAYS use the \`\`\`lang:filename.ext format. Only use regular code blocks (\`\`\`lang without :filename) when showing code for explanation purposes, not for file delivery.
+- For Word/Office documents (.docx, .doc): use \`\`\`text:filename.docx — the platform will convert the text content into a real Word document the user can download and open in Microsoft Word.
+- For PDF files: use \`\`\`text:filename.pdf — the platform will convert to a Word document format for download.
 - Examples of file delivery format:
   \`\`\`text:Hello.txt
   File content here
@@ -610,9 +840,22 @@ File and document capabilities:
   \`\`\`json:data.json
   {"key": "value"}
   \`\`\`
-- Use the correct language identifier before the colon: text for .txt, python for .py, typescript for .ts, json for .json, bash for .sh, yaml for .yaml, sql for .sql, markdown for .md, xml for .xml, csv for .csv, html for .html, css for .css, etc.
+  \`\`\`text:report.docx
+  # Report Title
+
+  ## Section 1
+  Content of section 1...
+  \`\`\`
+- Use the correct language identifier before the colon: text for .txt/.docx/.pdf, python for .py, typescript for .ts, json for .json, bash for .sh, yaml for .yaml, sql for .sql, markdown for .md, xml for .xml, csv for .csv, html for .html, css for .css, etc.
 - NEVER claim you cannot read, edit, or create files. NEVER give instructions to "open the file in a text editor" or "copy and paste". Just deliver the file using the format above.
-- Never truncate or abbreviate file content when editing — always return the complete file.`;
+- CRITICAL: When writing file content inside a \`\`\`lang:filename.ext block, deliver ONLY the actual document content. DO NOT include any of the following inside or after the file block:
+  - How-to instructions ("Steps to create a .docx", "Open Microsoft Word", "Create a New Document", "Copy and paste the content", "Format the Document", "Save the Document")
+  - Post-file instructions or commentary ("By following these steps...", "You can now open this in Microsoft Word...")
+  - Conversational tails ("If you have any questions, feel free to ask!", "Let me know if you need help!", "If you need further assistance...")
+  - Preamble filler ("Here is the document content:", "Below is the formatted version:", "I will now create the file:")
+- The file content should be clean, formatted document text only. The platform handles all file saving and opening automatically.
+- Never truncate or abbreviate file content when editing — always return the complete file.
+- When editing a document, preserve ALL original content and only apply the requested changes. Include every section, paragraph, and line of the original unless you are specifically asked to remove something.`;
           const identity = SYSTEM_PROMPT_TEMPLATE
             ? SYSTEM_PROMPT_TEMPLATE.split('{model}').join(identityName)
             : defaultIdentity;
@@ -628,7 +871,19 @@ File and document capabilities:
 
         const historyWindow = baseHistory.length > MAX_HISTORY ? baseHistory.slice(-MAX_HISTORY) : baseHistory;
 
-        const normalizedHistory: ChatMessage[] = [...historyWindow, userMsg]
+        // When the user is uploading a file and asking for a format conversion in the same
+        // message, inject a strong instruction so the model outputs CONTENT not how-to steps.
+        const effectiveUserMsg: UIMsg = (() => {
+          if (!userMsg.attachment || userMsg.attachment.type !== 'file') return userMsg;
+          if (!FILE_REQUEST_RE.test(userText)) return userMsg;
+          const preferredExt = preferredExtensionFromRequest(userText);
+          const fname = buildDeliveryFilename(userMsg.attachment.name || 'document', preferredExt);
+          const extLabel = preferredExt.toUpperCase();
+          const extra = `\n\n[IMPORTANT: The full text of the attached file has already been extracted and is available to you in this conversation. You MUST output its complete content inside a \`\`\`text:${fname} code fence. Do NOT explain how to create a ${extLabel} file. Do NOT give steps or instructions. Output ONLY the document content inside the fence.]`;
+          return { ...userMsg, content: (userMsg.content || '') + extra };
+        })();
+
+        const normalizedHistory: ChatMessage[] = [...historyWindow, effectiveUserMsg]
           .map((msg) => {
             const content = buildMessageContent(msg);
             if (Array.isArray(content) && !content.length) return null;
@@ -640,13 +895,15 @@ File and document capabilities:
         const boundedHistory = trimByCharBudget(normalizedHistory, MAX_CONTEXT_CHARS);
         const responseMaxTokens = pickMaxTokens(boundedHistory);
 
+        const effectiveSearchMode = shouldDisableSearch ? 'off' : searchMode;
+
         const payload = {
           model: modelRef.current,
           conversationId: conversationId ?? undefined,
           messages: boundedHistory,
           temperature: DEFAULT_TEMPERATURE,
           ...(responseMaxTokens ? { max_tokens: responseMaxTokens } : {}),
-          ...(searchMode && searchMode !== 'auto' ? { search: { mode: searchMode } } : {}),
+          ...(effectiveSearchMode && effectiveSearchMode !== 'auto' ? { search: { mode: effectiveSearchMode } } : {}),
         };
 
         let finalAssistantText = '';
@@ -685,6 +942,9 @@ File and document capabilities:
               fallbackNotified = true;
               onModelFallback?.('basic:gpt-4o-mini', 'quota-exceeded-gpt5');
             }
+            if (shouldBufferFileResponse) {
+              continue;
+            }
             if (useTypewriter) {
               typingBufferRef.current += chunk;
               startTypingFlush(assistantMsg.id);
@@ -702,7 +962,7 @@ File and document capabilities:
           }
         }
 
-        if (useTypewriter) {
+        if (useTypewriter && !shouldBufferFileResponse) {
           drainTypingBuffer(assistantMsg.id);
         }
 
