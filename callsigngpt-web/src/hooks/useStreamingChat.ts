@@ -181,6 +181,119 @@ const pickMaxTokens = (messages: ChatMessage[]) => {
   return Math.min(MAX_RESPONSE_TOKENS, Math.max(4096, Math.floor(promptTokens * 0.5)));
 };
 
+/* ─── Auto-fix: rewrite LLM refusals into downloadable file cards ──── */
+
+/** Patterns that indicate the user wants a file delivered. */
+const FILE_REQUEST_RE =
+  /\b(write|save|update|edit|rewrite|send|create|make|generate|give|produce|export|download).{0,30}(file|document|it|the .{1,20})\b|\b(send|give).{0,15}(me|us|back)\b|\bdo it yourself\b|\bdo it\b/i;
+
+/** Patterns that indicate the LLM refused to deliver a file. */
+const FILE_REFUSAL_RE =
+  /can(?:'?t| ?not)\b.{0,40}(?:modify|edit|create|write|send|generate|produce|make|download|update|save).{0,20}(?:file|document)|don'?t have.{0,30}(?:capability|ability|access)|open.{0,20}(?:text editor|notepad|textedit)|Here'?s.{0,15}(?:step-by-step|simple) (?:guide|process)|(?:copy|paste).{0,15}(?:following|content|text)/i;
+
+/** Map MIME types to fenced code block language tags. */
+const MIME_TO_LANG: Record<string, string> = {
+  'text/plain': 'text', 'text/markdown': 'markdown', 'text/csv': 'csv',
+  'text/html': 'html', 'text/css': 'css', 'text/javascript': 'javascript',
+  'text/x-typescript': 'typescript', 'text/x-python': 'python',
+  'application/json': 'json', 'application/xml': 'xml',
+  'application/x-yaml': 'yaml', 'text/x-sql': 'sql',
+  'application/pdf': 'text', // extracted text
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'text',
+  'application/msword': 'text',
+};
+
+function getLangForMime(mime: string): string {
+  if (MIME_TO_LANG[mime]) return MIME_TO_LANG[mime];
+  if (mime.startsWith('text/')) return 'text';
+  return 'text';
+}
+
+/**
+ * Extract the substantive content from an LLM response that refused to create a file.
+ * Looks for: blockquotes, code blocks, or the longest paragraph of actual content.
+ */
+function extractContentFromRefusal(text: string): string | null {
+  // 1. Try to find a fenced code block
+  const codeMatch = /```(?:\w+)?\n([\s\S]*?)```/.exec(text);
+  if (codeMatch?.[1]?.trim()) return codeMatch[1].trim();
+
+  // 2. Try to find a blockquote (markdown > lines or indented block)
+  const bqLines: string[] = [];
+  for (const line of text.split('\n')) {
+    const stripped = line.replace(/^\s*>\s?/, '');
+    if (line.match(/^\s*>/)) bqLines.push(stripped);
+  }
+  if (bqLines.length > 0) {
+    const bqText = bqLines.join('\n').trim();
+    if (bqText.length > 20) return bqText;
+  }
+
+  // 3. Try to find indented/highlighted content (lines starting with spaces after a numbered list item)
+  const indentedMatch = /(?:(?:^|\n)\s{2,}.+){2,}/m.exec(text);
+  if (indentedMatch) {
+    const indented = indentedMatch[0].split('\n').map(l => l.trim()).filter(Boolean).join('\n');
+    if (indented.length > 20) return indented;
+  }
+
+  // 4. Find the longest contiguous paragraph that isn't instructional
+  const paragraphs = text.split(/\n{2,}/).filter(p => {
+    const t = p.trim();
+    if (!t || t.length < 30) return false;
+    // Skip instruction lines
+    if (/^(\d+\.|[-*])\s/.test(t)) return false;
+    if (/open|notepad|text editor|save the|follow these/i.test(t)) return false;
+    return true;
+  });
+
+  if (paragraphs.length > 0) {
+    const best = paragraphs.sort((a, b) => b.length - a.length)[0];
+    if (best.length > 30) return best.trim();
+  }
+
+  return null;
+}
+
+/**
+ * Post-process the assistant's final response.
+ * If the user asked for a file and the LLM refused, rewrite the response
+ * to include a proper downloadable file card.
+ */
+function autoFixFileDelivery(
+  assistantText: string,
+  userText: string,
+  allMessages: UIMsg[],
+): string {
+  // Already has a file delivery block — nothing to fix
+  if (/```\w+:[^\n]+\n/.test(assistantText)) return assistantText;
+
+  // Check if the user asked for a file
+  if (!FILE_REQUEST_RE.test(userText)) return assistantText;
+
+  // Check if the assistant refused
+  if (!FILE_REFUSAL_RE.test(assistantText)) return assistantText;
+
+  // Find the most recent file attachment in the conversation
+  const recentFile = [...allMessages].reverse().find(m => m.attachment?.type === 'file');
+  const filename = recentFile?.attachment?.name || 'file.txt';
+  const mime = recentFile?.attachment?.mime || 'text/plain';
+  const lang = getLangForMime(mime);
+
+  // Extract the actual content the LLM wanted to deliver
+  const content = extractContentFromRefusal(assistantText);
+  if (!content) return assistantText;
+
+  // For binary doc formats (DOCX, PDF, etc.) the extracted content is plain text,
+  // so deliver as .txt rather than keeping the original binary extension.
+  const BINARY_DOC_RE = /officedocument|msword|pdf|rtf/i;
+  let deliveryFilename = filename;
+  if (BINARY_DOC_RE.test(mime)) {
+    const baseName = filename.replace(/\.[^.]+$/, '');
+    deliveryFilename = `${baseName}.txt`;
+  }
+  return `Here's your file:\n\n\`\`\`${lang}:${deliveryFilename}\n${content}\n\`\`\``;
+}
+
 const buildMessageContent = (message: UIMsg): ChatMessage['content'] => {
   const trimmed = message.content?.trim();
 
@@ -595,6 +708,22 @@ File and document capabilities:
 
         // Strip any leaked search status markers from the final text
         finalAssistantText = finalAssistantText.replace(/\[{3}SEARCH_STATUS\]{3}[^\n]*/g, '').trim();
+
+        // ── Auto-fix: when the LLM refuses to deliver a file, extract the ──
+        // ── content and reformat it as a downloadable file card.           ──
+        finalAssistantText = autoFixFileDelivery(
+          finalAssistantText,
+          userText,
+          [...historySnapshot, userMsg],
+        );
+
+        // Update the displayed message with the (possibly rewritten) final text
+        setMsgs((prev) => {
+          const out = prev.slice();
+          const idx = out.findIndex((m) => m.id === assistantMsg.id);
+          if (idx >= 0) out[idx] = { ...out[idx], content: finalAssistantText };
+          return out;
+        });
 
         await appendMessages?.(
           userMsg,
