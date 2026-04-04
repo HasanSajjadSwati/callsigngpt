@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/supabaseAdmin';
 import { supabaseServer } from '@/lib/supabaseServer';
 
 export const runtime = 'nodejs';
@@ -19,13 +18,9 @@ export async function POST(req: Request) {
     : await sb.auth.getUser();
   if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
-  // Use the admin client (service_role) to bypass RLS for bulk delete
-  const admin = supabaseAdmin();
-
   // Step 1: Null out folder_id on conversations so FK doesn't block folder delete
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const convTable = admin.from('conversations') as any;
-  const { error: unlinkErr } = await convTable
+  const { error: unlinkErr } = await sb
+    .from('conversations')
     .update({ folder_id: null })
     .eq('user_id', user.id);
   if (unlinkErr) {
@@ -33,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   // Step 2: Delete all conversations for the user
-  const { data: deletedConvos, error: convError } = await admin
+  const { data: deletedConvos, error: convError } = await sb
     .from('conversations')
     .delete()
     .eq('user_id', user.id)
@@ -44,7 +39,7 @@ export async function POST(req: Request) {
   }
 
   // Step 3: Delete all conversation folders for the user
-  const { data: deletedFolders, error: folderError } = await admin
+  const { data: deletedFolders, error: folderError } = await sb
     .from('conversation_folders')
     .delete()
     .eq('user_id', user.id)
