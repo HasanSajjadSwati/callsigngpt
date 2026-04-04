@@ -75,16 +75,16 @@ export class DocumentParserService {
       if (this.TEXT_RE.test(resolvedMime)) return this.decodeText(buffer, resolvedMime);
       if (this.PDF_RE.test(resolvedMime)) return this.parsePdf(buffer);
       if (this.DOCX_RE.test(resolvedMime)) return this.parseDocx(buffer);
-      return `[Unsupported document type: ${resolvedMime}]`;
+      return `(Unsupported document type: ${resolvedMime} — could not extract text content.)`;
     } catch (err: any) {
       this.logger.warn(`Document parsing failed for ${resolvedMime}: ${err?.message}`);
-      return `[Failed to extract text from ${resolvedMime} document]`;
+      return `(Failed to extract text from this ${resolvedMime} document.)`;
     }
   }
 
   private decodeText(buffer: Buffer, mime: string): string {
     const text = buffer.toString('utf-8');
-    if (!text.trim()) return `[Empty ${mime} document]`;
+    if (!text.trim()) return '(The file appears to be empty.)';
     return text.length > this.MAX_TEXT
       ? `${text.slice(0, this.MAX_TEXT)}\n... [truncated, ${text.length.toLocaleString()} chars total]`
       : text;
@@ -98,8 +98,8 @@ export class DocumentParserService {
       const result = await parser.getText();
       const text = result.text?.trim() || '';
       const pages = result.total || 0;
-      if (!text) return '[PDF document: no extractable text found — may be scanned/image-based]';
-      const header = `[PDF document — ${pages} page${pages === 1 ? '' : 's'}]`;
+      if (!text) return '(The PDF appears to contain no extractable text — it may be scanned or image-based.)';
+      const header = `--- PDF content (${pages} page${pages === 1 ? '' : 's'}) ---`;
       return text.length > this.MAX_TEXT
         ? `${header}\n${text.slice(0, this.MAX_TEXT)}\n... [truncated, ${text.length.toLocaleString()} chars total]`
         : `${header}\n${text}`;
@@ -112,9 +112,9 @@ export class DocumentParserService {
     const mammoth = await import('mammoth');
     const result = await mammoth.extractRawText({ buffer });
     const text = result.value?.trim() || '';
-    if (!text) return '[DOCX document: no extractable text found]';
+    if (!text) return '(The document appears to be empty or contains only images/formatting with no extractable text.)';
     return text.length > this.MAX_TEXT
-      ? `[DOCX document]\n${text.slice(0, this.MAX_TEXT)}\n... [truncated, ${text.length.toLocaleString()} chars total]`
-      : `[DOCX document]\n${text}`;
+      ? `--- Document content ---\n${text.slice(0, this.MAX_TEXT)}\n... [truncated, ${text.length.toLocaleString()} chars total]`
+      : `--- Document content ---\n${text}`;
   }
 }

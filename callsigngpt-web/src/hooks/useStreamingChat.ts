@@ -192,11 +192,12 @@ const buildMessageContent = (message: UIMsg): ChatMessage['content'] => {
     return content;
   }
 
-  // File attachments: include metadata + (truncated) base64 data inline as text
+  // File attachments: send the data URL with correct MIME so the server-side
+  // document parser can extract the actual content (PDF text, DOCX text, etc.).
+  // Keep the message clean — avoid noisy metadata that confuses the LLM.
   if (message.attachment?.type === 'file') {
     const parts: string[] = [];
     if (trimmed) parts.push(trimmed);
-    const meta = describeAttachment(message.attachment);
 
     // Reconstruct the data URL with the correct MIME (from attachment.mime) in case
     // FileReader embedded a wrong/empty MIME in the src (e.g. "application/octet-stream"
@@ -210,26 +211,25 @@ const buildMessageContent = (message: UIMsg): ChatMessage['content'] => {
       if (semi !== -1) {
         const embeddedMime = rawSrc.slice(5, semi);
         if (!embeddedMime || embeddedMime === 'application/octet-stream') {
-          // Replace the MIME part with the known-correct one
           fixedSrc = `data:${message.attachment.mime};base64,${rawSrc.slice(semi + 8)}`;
         }
       } else if (rawSrc.startsWith('data:;base64,')) {
-        // data URL with completely missing MIME (some browsers)
         fixedSrc = `data:${message.attachment.mime};base64,${rawSrc.slice(13)}`;
       }
     }
 
+    // For text-like files, decode client-side so the LLM sees content directly
+    // (the server will also extract, but this gives immediate readable context).
     const decoded = fixedSrc ? maybeDecodeText(fixedSrc) : null;
-    const data = fixedSrc ? truncateData(fixedSrc, 200_000) : '';
-    parts.push(
-      [
-        meta,
-        decoded ? `Content preview:\n${decoded}` : '',
-        data && !decoded ? `Data (base64, may be truncated): ${data}` : '',
-      ]
-        .filter(Boolean)
-        .join('\n\n'),
-    );
+    if (decoded) {
+      parts.push(`[File: ${message.attachment.name}]\n${decoded}`);
+    } else if (fixedSrc) {
+      // Binary files (PDF, DOCX, etc.): send the data URL as-is.
+      // The server-side document parser will extract the text content
+      // and replace this data URL before it reaches the LLM.
+      parts.push(`[File: ${message.attachment.name}]\n${fixedSrc}`);
+    }
+
     return parts.join('\n\n');
   }
 
@@ -482,13 +482,23 @@ Response guidelines:
 - When information may be outdated or uncertain, say so explicitly rather than presenting it as fact.
 
 File and document capabilities:
-- Users can attach files and images directly in this chat. When a file is attached, its content is extracted and included in the conversation context for you to read and work with.
-- You CAN read, analyze, summarize, edit, rewrite, translate, and answer questions about any attached file content.
-- When asked to edit or rewrite a document, output the FULL revised version — never a partial or abbreviated version — inside a fenced code block with the correct language tag (e.g. \`\`\`json, \`\`\`python, \`\`\`typescript, \`\`\`markdown, etc.).
-- When asked to create a new file (any format: code, JSON, CSV, YAML, SQL, HTML, Markdown, shell scripts, config files, log analysis, etc.), output the complete file content in a fenced code block with the correct language tag.
-- Always use the correct language identifier in code fences so the user can download the file with the right extension. Examples: \`\`\`python for .py, \`\`\`typescript for .ts, \`\`\`json for .json, \`\`\`bash for .sh, \`\`\`yaml for .yaml, \`\`\`sql for .sql, \`\`\`markdown for .md.
-- A "Save file" download button appears on every code block — users can download the output directly.
-- Never claim you cannot read or edit files — the content is already provided to you in the conversation. Simply work with it.
+- Users can attach files and images directly in this chat. When a file is attached, its text content has already been extracted and is included in the conversation — you can see and work with the full content.
+- When a user asks "what is inside this file?" or similar, respond with the actual content of the file. Do NOT describe file metadata, encoding, format internals, or give instructions on how to open it. Simply show or summarize the content.
+- You CAN read, analyze, summarize, edit, rewrite, translate, and answer questions about any attached file content. The content is already available to you in the conversation.
+- When a user asks you to create, edit, update, rewrite, or send a file, you MUST deliver it as a downloadable file. To do this, use a special code fence format with the filename: \`\`\`lang:filename.ext (e.g. \`\`\`text:Hello.txt, \`\`\`python:script.py, \`\`\`json:config.json). This renders as a downloadable file card — NOT a code block.
+- IMPORTANT: When the user asks for a FILE (e.g. "send me the file", "create a file", "write it to the file", "update the file"), ALWAYS use the \`\`\`lang:filename.ext format. Only use regular code blocks (\`\`\`lang without :filename) when showing code for explanation purposes, not for file delivery.
+- Examples of file delivery format:
+  \`\`\`text:Hello.txt
+  File content here
+  \`\`\`
+  \`\`\`python:script.py
+  print("hello")
+  \`\`\`
+  \`\`\`json:data.json
+  {"key": "value"}
+  \`\`\`
+- Use the correct language identifier before the colon: text for .txt, python for .py, typescript for .ts, json for .json, bash for .sh, yaml for .yaml, sql for .sql, markdown for .md, xml for .xml, csv for .csv, html for .html, css for .css, etc.
+- NEVER claim you cannot read, edit, or create files. NEVER give instructions to "open the file in a text editor" or "copy and paste". Just deliver the file using the format above.
 - Never truncate or abbreviate file content when editing — always return the complete file.`;
           const identity = SYSTEM_PROMPT_TEMPLATE
             ? SYSTEM_PROMPT_TEMPLATE.split('{model}').join(identityName)
