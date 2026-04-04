@@ -411,6 +411,13 @@ export function useStreamingChat({
       const assistantMsg: UIMsg = { id: genId(), role: 'assistant', content: '', createdAt: now };
       const useTypewriter = /nano/i.test(modelRef.current);
 
+      // Capture history snapshot BEFORE setMsgs adds the placeholder messages.
+      // After `await ensureConversation()` React may have committed the state update
+      // and synchronized msgsRef — causing userMsg to appear in both historyWindow and
+      // the explicit append below, which produces consecutive same-role turns that
+      // Gemini (and some other providers) reject with a 400 error.
+      const historySnapshot = msgsRef.current;
+
       setMsgs((prev) => {
         const lastMsg = prev[prev.length - 1];
         if (lastMsg?.id === userMsg.id) {
@@ -454,7 +461,7 @@ Response guidelines:
           const identity = SYSTEM_PROMPT_TEMPLATE
             ? SYSTEM_PROMPT_TEMPLATE.split('{model}').join(identityName)
             : defaultIdentity;
-          const history = [...msgsRef.current];
+          const history = [...historySnapshot];
           const systemIndex = history.findIndex((m) => m.role === 'system');
           if (systemIndex >= 0) {
             history[systemIndex] = { ...history[systemIndex], content: identity };

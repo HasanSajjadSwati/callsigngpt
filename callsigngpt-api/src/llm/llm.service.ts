@@ -1107,12 +1107,25 @@ private async *streamGoogleGemini(opts: {
       }
     }
 
+    // Merge consecutive same-role turns — Gemini requires strict user/model alternation.
+    // Consecutive turns of the same role can appear due to async state timing on the client.
+    const merged: Array<{ role: 'user' | 'model'; parts: { text: string }[] }> = [];
+    for (const turn of contents) {
+      const prev = merged[merged.length - 1];
+      if (prev && prev.role === turn.role) {
+        // Combine into the previous turn (join with newline separator)
+        prev.parts = [...prev.parts, ...turn.parts];
+      } else {
+        merged.push({ role: turn.role, parts: [...turn.parts] });
+      }
+    }
+
     // ✅ Explicitly cast role as the literal 'system' to satisfy TypeScript
     const system = systemText
       ? ({ role: 'system' as const, parts: [{ text: systemText }] })
       : undefined;
 
-    return { system, contents };
+    return { system, contents: merged };
   }
 
 
