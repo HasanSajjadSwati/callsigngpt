@@ -8,7 +8,7 @@ import { GoogleSearchService, type SearchResult } from '../search/google-search.
 
 const DEFAULT_FALLBACK_MODEL = 'basic:gpt-4o-mini';
 const SEARCH_STATUS_PREFIX = '[[[SEARCH_STATUS]]]';
-const DATA_URL_RE = /data:([a-z0-9+/.-]+);base64,([A-Za-z0-9+/=]+)/gi;
+const DATA_URL_RE = /data:([a-z0-9+/.-]*);base64,([A-Za-z0-9+/=]+)/gi;
 
 type ChatContentPart =
   | { type: 'text'; text: string }
@@ -142,7 +142,7 @@ export class LlmService {
     const replacements = await Promise.all(
       matches.map(async ({ mime, b64 }) => {
         const buf = Buffer.from(b64, 'base64');
-        if (this.docParser.canParse(mime)) {
+        if (this.docParser.canParse(mime) || !mime || mime === 'application/octet-stream') {
           return this.docParser.parse(buf, mime);
         }
         // Images are handled via image_url parts; other binary types get a placeholder

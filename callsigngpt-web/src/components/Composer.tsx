@@ -34,6 +34,110 @@ const formatSize = (size: number) => {
 const PARSEABLE_DOC_RE =
   /pdf|msword|officedocument\.wordprocessingml|^text\/|json$|xml$|csv$|yaml$|yml$|markdown$|javascript$|x-javascript$|typescript$|x-typescript$|x-python$|x-ruby$|x-perl$|x-php$|x-sh$|x-shell$|x-shellscript$|x-sql$|x-c$|x-c\+\+$|x-java$|x-kotlin$|x-swift$|x-go$|x-rust$|x-lua$|x-scala$|x-r$|x-toml$|x-ini$|x-properties$|x-log$|x-diff$|x-patch$|graphql$|proto$|x-dotenv$|svelte$|vue$/i;
 
+/**
+ * Many browsers return an empty or generic 'application/octet-stream' type for
+ * office documents and other well-known file types (especially on systems without
+ * the relevant app installed). This map lets us recover the correct MIME from the
+ * file extension so the server-side document parser can extract the content.
+ */
+const MIME_FROM_EXT: Record<string, string> = {
+  // Documents
+  '.pdf':  'application/pdf',
+  '.doc':  'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls':  'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt':  'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  '.odt':  'application/vnd.oasis.opendocument.text',
+  '.ods':  'application/vnd.oasis.opendocument.spreadsheet',
+  '.odp':  'application/vnd.oasis.opendocument.presentation',
+  '.rtf':  'application/rtf',
+  // Plain text / data
+  '.txt':  'text/plain',
+  '.md':   'text/markdown',
+  '.mdx':  'text/markdown',
+  '.csv':  'text/csv',
+  '.tsv':  'text/tab-separated-values',
+  '.json': 'application/json',
+  '.jsonc': 'application/json',
+  '.yaml': 'application/x-yaml',
+  '.yml':  'application/x-yaml',
+  '.toml': 'application/x-toml',
+  '.xml':  'application/xml',
+  '.html': 'text/html',
+  '.htm':  'text/html',
+  '.svg':  'image/svg+xml',
+  '.ini':  'text/x-ini',
+  '.env':  'text/x-dotenv',
+  '.log':  'text/x-log',
+  '.diff': 'text/x-diff',
+  '.patch':'text/x-patch',
+  // Code
+  '.js':   'text/javascript',
+  '.mjs':  'text/javascript',
+  '.cjs':  'text/javascript',
+  '.jsx':  'text/javascript',
+  '.ts':   'text/x-typescript',
+  '.tsx':  'text/x-typescript',
+  '.py':   'text/x-python',
+  '.rb':   'text/x-ruby',
+  '.java': 'text/x-java',
+  '.kt':   'text/x-kotlin',
+  '.swift':'text/x-swift',
+  '.go':   'text/x-go',
+  '.rs':   'text/x-rust',
+  '.c':    'text/x-c',
+  '.cpp':  'text/x-c++',
+  '.h':    'text/x-c',
+  '.hpp':  'text/x-c++',
+  '.cs':   'text/x-csharp',
+  '.php':  'text/x-php',
+  '.sh':   'text/x-shellscript',
+  '.bash': 'text/x-shellscript',
+  '.zsh':  'text/x-shellscript',
+  '.ps1':  'text/x-powershell',
+  '.lua':  'text/x-lua',
+  '.r':    'text/x-r',
+  '.scala':'text/x-scala',
+  '.dart': 'text/x-dart',
+  '.sql':  'text/x-sql',
+  '.graphql': 'application/graphql',
+  '.gql':  'application/graphql',
+  '.proto':'text/x-protobuf',
+  '.vue':  'text/x-vue',
+  '.svelte':'text/x-svelte',
+  '.astro':'text/x-astro',
+  '.tf':   'text/x-terraform',
+  '.dockerfile': 'text/x-dockerfile',
+};
+
+/** Return the most specific MIME for a file, falling back to extension lookup. */
+function resolveFileMime(file: File): string {
+  if (file.type && file.type !== 'application/octet-stream') return file.type;
+  const dotIdx = file.name.lastIndexOf('.');
+  if (dotIdx !== -1) {
+    const ext = file.name.slice(dotIdx).toLowerCase();
+    if (MIME_FROM_EXT[ext]) return MIME_FROM_EXT[ext];
+  }
+  return file.type || 'application/octet-stream';
+}
+
+/**
+ * Patch the MIME in a data URL if the browser embedded the wrong one.
+ * If the data URL has an empty or generic 'application/octet-stream' MIME but
+ * we know the correct one, replace it so the server parser gets the right type.
+ */
+function patchDataUrlMime(dataUrl: string, correctMime: string): string {
+  if (!dataUrl.startsWith('data:')) return dataUrl;
+  const semi = dataUrl.indexOf(';base64,');
+  if (semi === -1) return dataUrl;
+  const embeddedMime = dataUrl.slice(5, semi); // "data:" is 5 chars
+  if (embeddedMime === correctMime) return dataUrl; // already correct
+  if (embeddedMime && embeddedMime !== 'application/octet-stream') return dataUrl; // browser already set something specific
+  return `data:${correctMime};base64,${dataUrl.slice(semi + 8)}`;
+}
+
 const readFileAsDataUrl = (file: File | Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -84,15 +188,29 @@ export default function Composer({
       return;
     }
     try {
-      const src = await readFileAsDataUrl(file);
+      const rawSrc = await readFileAsDataUrl(file);
       const isImage = file.type.startsWith("image/");
-      setAttachment({
-        type: isImage ? "image" : "file",
-        src,
-        name: file.name || (isImage ? "pasted-image" : "file"),
-        mime: file.type || "application/octet-stream",
-        size: file.size,
-      });
+      if (isImage) {
+        setAttachment({
+          type: "image",
+          src: rawSrc,
+          name: file.name || "pasted-image",
+          mime: file.type,
+          size: file.size,
+        });
+      } else {
+        // Resolve the correct MIME (browser may miss it for Office docs etc.)
+        const mime = resolveFileMime(file);
+        // Patch the data URL to carry the correct MIME (server parser uses this)
+        const src = patchDataUrlMime(rawSrc, mime);
+        setAttachment({
+          type: "file",
+          src,
+          name: file.name || "file",
+          mime,
+          size: file.size,
+        });
+      }
     } catch (err) {
       console.error("Failed to load attachment", err);
     } finally {

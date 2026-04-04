@@ -197,8 +197,30 @@ const buildMessageContent = (message: UIMsg): ChatMessage['content'] => {
     const parts: string[] = [];
     if (trimmed) parts.push(trimmed);
     const meta = describeAttachment(message.attachment);
-    const decoded = message.attachment.src ? maybeDecodeText(message.attachment.src) : null;
-    const data = message.attachment.src ? truncateData(message.attachment.src, 200_000) : '';
+
+    // Reconstruct the data URL with the correct MIME (from attachment.mime) in case
+    // FileReader embedded a wrong/empty MIME in the src (e.g. "application/octet-stream"
+    // for DOCX on a machine without Office, or empty string on some browsers).
+    // The server-side document parser uses the MIME from the data URL to decide how
+    // to extract text, so getting it right here is critical.
+    const rawSrc = message.attachment.src || '';
+    let fixedSrc = rawSrc;
+    if (rawSrc.startsWith('data:') && message.attachment.mime) {
+      const semi = rawSrc.indexOf(';base64,');
+      if (semi !== -1) {
+        const embeddedMime = rawSrc.slice(5, semi);
+        if (!embeddedMime || embeddedMime === 'application/octet-stream') {
+          // Replace the MIME part with the known-correct one
+          fixedSrc = `data:${message.attachment.mime};base64,${rawSrc.slice(semi + 8)}`;
+        }
+      } else if (rawSrc.startsWith('data:;base64,')) {
+        // data URL with completely missing MIME (some browsers)
+        fixedSrc = `data:${message.attachment.mime};base64,${rawSrc.slice(13)}`;
+      }
+    }
+
+    const decoded = fixedSrc ? maybeDecodeText(fixedSrc) : null;
+    const data = fixedSrc ? truncateData(fixedSrc, 200_000) : '';
     parts.push(
       [
         meta,
