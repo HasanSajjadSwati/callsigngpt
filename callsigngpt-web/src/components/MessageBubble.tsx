@@ -26,6 +26,76 @@ function CheckIcon({ className = 'w-4 h-4' }: { className?: string }) {
   );
 }
 
+function DownloadIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v13M8 12l4 4 4-4" />
+      <path d="M3 19h18" />
+    </svg>
+  );
+}
+
+/* ─── Language → file extension map ─────────────────────────────────── */
+
+const LANG_EXT: Record<string, string> = {
+  javascript: '.js', js: '.js',
+  typescript: '.ts', ts: '.ts',
+  jsx: '.jsx', tsx: '.tsx',
+  python: '.py', py: '.py',
+  ruby: '.rb', rb: '.rb',
+  java: '.java',
+  kotlin: '.kt',
+  swift: '.swift',
+  go: '.go', golang: '.go',
+  rust: '.rs',
+  c: '.c',
+  cpp: '.cpp', 'c++': '.cpp',
+  csharp: '.cs', cs: '.cs',
+  php: '.php',
+  html: '.html',
+  css: '.css',
+  scss: '.scss', sass: '.sass',
+  less: '.less',
+  json: '.json',
+  yaml: '.yaml', yml: '.yaml',
+  xml: '.xml',
+  toml: '.toml',
+  ini: '.ini',
+  env: '.env',
+  sql: '.sql',
+  graphql: '.graphql', gql: '.graphql',
+  bash: '.sh', sh: '.sh', shell: '.sh', zsh: '.sh', fish: '.sh',
+  powershell: '.ps1', ps1: '.ps1',
+  dockerfile: '.dockerfile',
+  makefile: '.makefile',
+  cmake: '.cmake',
+  markdown: '.md', md: '.md',
+  mdx: '.mdx',
+  csv: '.csv',
+  log: '.log', logs: '.log',
+  nginx: '.conf', apache: '.conf',
+  lua: '.lua',
+  perl: '.pl',
+  r: '.r',
+  scala: '.scala',
+  dart: '.dart',
+  elixir: '.ex',
+  clojure: '.clj',
+  haskell: '.hs',
+  tex: '.tex', latex: '.tex',
+  diff: '.diff', patch: '.patch',
+  svelte: '.svelte',
+  vue: '.vue',
+  astro: '.astro',
+  proto: '.proto',
+  plaintext: '.txt', text: '.txt',
+};
+
+function langToExt(lang: string | undefined): string {
+  if (!lang) return '.txt';
+  return LANG_EXT[lang.toLowerCase()] ?? `.${lang.toLowerCase()}`;
+}
+
 /* ─── Helpers ────────────────────────────────────────────────────────── */
 
 export type Role = UIMsg['role'];
@@ -60,6 +130,7 @@ function CodeBlock({
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
+  const [downloaded, setDownloaded] = useState(false);
   const code = extractText(children).replace(/\n$/, '');
 
   const handleCopy = useCallback(async () => {
@@ -70,6 +141,24 @@ function CodeBlock({
     } catch { /* noop */ }
   }, [code]);
 
+  const handleDownload = useCallback(() => {
+    try {
+      const ext = langToExt(lang);
+      const filename = `file${ext}`;
+      const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setDownloaded(true);
+      setTimeout(() => setDownloaded(false), 2000);
+    } catch { /* noop */ }
+  }, [code, lang]);
+
   return (
     <div className="code-block-wrapper group relative my-3 first:mt-0 last:mb-0 rounded-xl overflow-hidden border border-[var(--ui-border)] shadow-lg">
       {/* Header bar */}
@@ -77,23 +166,43 @@ function CodeBlock({
         <span className="text-xs font-medium text-[var(--ui-text-muted)] tracking-wide">
           {lang || 'plaintext'}
         </span>
-        <button
-          type="button"
-          onClick={handleCopy}
-          className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all duration-150 text-[var(--ui-text-muted)] hover:text-white hover:bg-white/10"
-        >
-          {copied ? (
-            <>
-              <CheckIcon className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="text-emerald-400">Copied!</span>
-            </>
-          ) : (
-            <>
-              <CopyIcon className="w-3.5 h-3.5" />
-              <span>Copy</span>
-            </>
-          )}
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all duration-150 text-[var(--ui-text-muted)] hover:text-white hover:bg-white/10"
+            title={`Download as file${langToExt(lang)}`}
+          >
+            {downloaded ? (
+              <>
+                <CheckIcon className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Saved!</span>
+              </>
+            ) : (
+              <>
+                <DownloadIcon className="w-3.5 h-3.5" />
+                <span>Save file</span>
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium transition-all duration-150 text-[var(--ui-text-muted)] hover:text-white hover:bg-white/10"
+          >
+            {copied ? (
+              <>
+                <CheckIcon className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Copied!</span>
+              </>
+            ) : (
+              <>
+                <CopyIcon className="w-3.5 h-3.5" />
+                <span>Copy</span>
+              </>
+            )}
+          </button>
+        </div>
       </div>
       {/* Code body */}
       <div className="scroll-area overflow-x-auto bg-[#0d1117]">

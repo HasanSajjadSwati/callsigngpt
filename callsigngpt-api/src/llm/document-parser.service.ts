@@ -12,7 +12,9 @@ export class DocumentParserService {
   /** Supported binary document MIME patterns */
   private readonly PDF_RE = /pdf/i;
   private readonly DOCX_RE = /officedocument\.wordprocessingml|msword/i;
-  private readonly TEXT_RE = /^text\/|json$|xml$|csv$|markdown$|yaml$|yml$/i;
+  // Covers text/*, plus common application/* types for code, config, and data files
+  private readonly TEXT_RE =
+    /^text\/|json$|xml$|csv$|markdown$|yaml$|yml$|javascript$|x-javascript$|typescript$|x-typescript$|x-python$|x-ruby$|x-perl$|x-php$|x-sh$|x-shell$|x-shellscript$|x-sql$|x-c$|x-c\+\+$|x-java$|x-kotlin$|x-swift$|x-go$|x-rust$|x-lua$|x-scala$|x-r$|x-dart$|x-tex$|x-latex$|x-toml$|x-ini$|x-properties$|x-log$|x-diff$|x-patch$|graphql$|gql$|x-protobuf$|proto$|env$|x-env$|x-dotenv$|svelte$|vue$|astro$/i;
 
   /** Returns true if the mime type can be parsed into readable text */
   canParse(mime: string): boolean {

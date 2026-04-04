@@ -31,7 +31,8 @@ const formatSize = (size: number) => {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
-const PARSEABLE_DOC_RE = /pdf|msword|officedocument\.wordprocessingml/i;
+const PARSEABLE_DOC_RE =
+  /pdf|msword|officedocument\.wordprocessingml|^text\/|json$|xml$|csv$|yaml$|yml$|markdown$|javascript$|x-javascript$|typescript$|x-typescript$|x-python$|x-ruby$|x-perl$|x-php$|x-sh$|x-shell$|x-shellscript$|x-sql$|x-c$|x-c\+\+$|x-java$|x-kotlin$|x-swift$|x-go$|x-rust$|x-lua$|x-scala$|x-r$|x-toml$|x-ini$|x-properties$|x-log$|x-diff$|x-patch$|graphql$|proto$|x-dotenv$|svelte$|vue$/i;
 
 const readFileAsDataUrl = (file: File | Blob) =>
   new Promise<string>((resolve, reject) => {
